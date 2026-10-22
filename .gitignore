@@ -54,3 +54,6 @@ perf-*.map
 *.swo
 .DS_Store
 Thumbs.db
+
+# Blender autosave backups
+*.blend1

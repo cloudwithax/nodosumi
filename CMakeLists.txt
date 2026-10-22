@@ -436,6 +436,11 @@ target_link_libraries(nodosumi ${NODOSUMI_LIBS})
 target_compile_definitions(nodosumi PRIVATE ${NODOSUMI_DEFS})
 target_compile_options(nodosumi PRIVATE ${NODOSUMI_FLAGS})
 
+if(BUILD_LIBRETRO)
+  # frontends look cores up as <corename>_libretro, matching the .info file
+  set_target_properties(nodosumi PROPERTIES PREFIX "" OUTPUT_NAME nodosumi_libretro)
+endif()
+
 if(BUILD_LIBRETRO AND (PLATFORM_LINUX OR PLATFORM_ANDROID))
   # bind references to definitions inside this shared object. without this, a
   # host library loaded by the frontend can interpose on our exported symbols

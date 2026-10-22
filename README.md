@@ -1,75 +1,70 @@
-# Nodosumi
+<p align="center">
+  <img src="branding/export/nodosumi-logo-256.png" width="128" height="128" alt="Nodosumi Logo">
+</p>
 
-Nodosumi is a SEGA Dreamcast emulator core written in C, with a focus on
-low-latency, full-speed emulation on small ARM handhelds as well as desktop
-Linux, macOS, and Windows. It ships as a standalone libretro core and as a
-desktop application.
+<h1 align="center">Nodosumi</h1>
+
+<p align="center">
+  <b>A Dreamcast emulator tuned for H700 handhelds</b>
+</p>
+
+<p align="center">
+  <a href="#features">Features</a> •
+  <a href="#how-its-built">How it's built</a> •
+  <a href="#installation">Installation</a> •
+  <a href="#building">Building</a>
+</p>
+
+---
 
 ## Features
 
-- SH-4 and ARM7 interpreters, plus x86-64 and AArch64 JIT backends
-- PowerVR2 (PVR) hardware renderer on OpenGL ES 3.0+
-- AICA audio, GD-ROM, Maple input, and Dreamcast BIOS/Flash handling
-- Byte-exact save states, including cross-session round-trips
-- Multi-disc support through `.m3u` playlists
-- Libretro core with disk control and core options
+- **Full speed on an H700** — AArch64 JIT tuned for the Cortex-A53
+- **libretro core and desktop app** — the desktop app runs on Linux, macOS, and Windows
+- **Save states** — byte-exact, and they survive between sessions
+- **Multi-disc** — `.m3u` playlists with RetroArch disk control
+- **Formats** — `.cdi`, `.chd`, `.gdi`, `.cue`, `.m3u`
 
-## Requirements
+## How it's built
 
-- A Dreamcast BIOS (`dc/boot.bin`) is required. No BIOS, ROM, or game data is
-  included with Nodosumi.
-- OpenGL ES 3.0 or newer for the hardware renderer.
-- CMake 3.5+ and a C11/C++11 toolchain.
+Nodosumi is written in C and descends from [Redream](https://github.com/inolen/redream).
 
-## Building the libretro core
+| Part | What it does |
+|------|--------------|
+| `src/guest` | The Dreamcast: SH-4, ARM7, PowerVR2, AICA audio, GD-ROM, Maple input, BIOS/flash |
+| `src/jit` | Recompiler: SH-4 and ARM7 frontends → IR → optimization passes → x86-64 or AArch64 backend, with an interpreter fallback |
+| `src/render` | PowerVR2 renderer on OpenGL ES 3.0 |
+| `src/host` | Frontends: libretro (`retro_host.c`) and SDL2 (`sdl_host.c`) |
+
+## Installation
+
+1. Copy `nodosumi_libretro.so` to RetroArch's `cores/` and `libretro/nodosumi_libretro.info` to `info/`
+2. Put your Dreamcast BIOS at `<system>/dc/boot.bin`
+
+## Building
+
+Needs CMake 3.5+, Ninja, and `aarch64-linux-gnu-gcc` for the H700 build.
+
+### libretro core for H700
 
 ```bash
 cmake -S . -B build -G Ninja \
   -DBUILD_LIBRETRO=ON \
-  -DBUILD_TOOLS=OFF \
-  -DBUILD_TESTS=OFF \
+  -DA64_JIT=ON \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/aarch64-linux.cmake \
   -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j"$(nproc)"
+cmake --build build
 ```
 
-The resulting core is `build/libnodosumi.so` (`libnodosumi.dylib` on macOS).
-Copy it into RetroArch's `cores/` directory next to a matching `.info` file.
-
-For an AArch64 build with the JIT enabled, add:
-
-```bash
--DA64_JIT=ON -DCMAKE_TOOLCHAIN_FILE=cmake/aarch64-linux.cmake
-```
-
-## Building the desktop application
+### Desktop app
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j"$(nproc)"
+cmake --build build
 ```
-
-The executable is `build/nodosumi`.
-
-## Usage
-
-- Place the Dreamcast BIOS at `<system_directory>/dc/boot.bin`.
-- Load `.cdi`, `.chd`, `.gdi`, `.cue`, or `.m3u` disc images. Disc images must
-  be passed as full paths; they are not extracted from archives.
-- Core options control region, language, broadcast standard, aspect ratio, and
-  statistics logging.
-- Set `NODOSUMI_STATS=1` to log per-frame timing, and `NODOSUMI_PERF=1` to
-  write a JIT symbol map for `perf`.
-
-## Status
-
-Nodosumi 1.0 is the first public release. The emulation core is stable enough
-to run a broad library of Dreamcast software; compatibility and performance
-work continues.
 
 ## License
 
-Nodosumi is free software licensed under the GNU General Public License,
-version 3 or later. See [LICENSE.txt](LICENSE.txt).
+GPLv3 or later. Credits are in [COPYRIGHT.md](COPYRIGHT.md).
 
-"SEGA" and "Dreamcast" are trademarks of SEGA Corporation. Nodosumi is not
-affiliated with or endorsed by SEGA.
+SEGA and Dreamcast are trademarks of SEGA Corporation. Nodosumi isn't affiliated with SEGA.
