@@ -1,0 +1,23 @@
+display_name = "Nodosumi (Dreamcast)"
+authors = "Nodosumi contributors"
+supported_extensions = "cdi|chd|gdi|cue|m3u"
+corename = "nodosumi"
+manufacturer = "Sega"
+categories = "Emulator"
+systemname = "Sega Dreamcast"
+systemid = "dreamcast"
+database = "Sega - Dreamcast"
+license = "GPLv3"
+permissions = ""
+display_version = "1.0.0"
+
+# Nodosumi expects its data files under <system>/dc
+firmware_count = 2
+firmware0_desc = "dc/boot.bin (Dreamcast BIOS)"
+firmware0_path = "dc/boot.bin"
+firmware0_opt = "false"
+firmware1_desc = "dc/flash.bin (Dreamcast flash ROM, auto-created if absent)"
+firmware1_path = "dc/flash.bin"
+firmware1_opt = "true"
+
+notes = "Nodosumi Dreamcast core. Requires a Dreamcast BIOS (dc/boot.bin) and an OpenGL ES 3.0 (or newer) hardware renderer. Disc images must be provided as full paths (no archive extraction)."

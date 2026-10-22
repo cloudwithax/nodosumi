@@ -1,0 +1,56 @@
+# Build output (root and common build dirs)
+/build/
+/build-*/
+/out/
+/out-*/
+/dist/
+/dist-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+.ninja_deps
+.ninja_log
+
+# Compiled objects at the repo root
+/*.o
+/*.a
+/*.so
+/*.so.*
+/*.dylib
+/*.dll
+/*.exe
+/*.lib
+/*.obj
+
+# Local runtime data
+/.nodosumi/
+/dc/
+/config
+*.srm
+*.state
+*.nvmem
+
+# Core dumps and profiling maps
+/core
+/core.*
+*.core
+perf-*.map
+
+# Local game / firmware data at the repo root - never commit these
+/*.cdi
+/*.chd
+/*.gdi
+/*.cue
+/*.m3u
+/*.iso
+/*.img
+/*.bin
+/*.rom
+/*.lpl
+
+# Editor / OS
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

@@ -1,0 +1,11 @@
+skip_tags: true
+
+image: Visual Studio 2015
+
+build_script:
+  - mkdir build
+  - cd build
+  - cmake -G "Visual Studio 14 Win64" ..
+  - cd ..
+  - msbuild.exe build/nodosumi.sln /t:nodosumi /p:Configuration=Release /p:Platform=x64
+

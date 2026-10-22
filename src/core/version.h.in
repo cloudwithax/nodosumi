@@ -1,0 +1,6 @@
+#ifndef NODOSUMI_VERSION_H
+#define NODOSUMI_VERSION_H
+
+#define GIT_VERSION "@GIT_VERSION@"
+
+#endif
