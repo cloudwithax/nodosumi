@@ -38,8 +38,9 @@ Nodosumi is written in C and descends from [Redream](https://github.com/inolen/r
 
 ## Installation
 
-1. Copy `nodosumi_libretro.so` to RetroArch's `cores/` and `libretro/nodosumi_libretro.info` to `info/`
-2. Put your Dreamcast BIOS at `<system>/dc/boot.bin`
+1. Download the latest zip from [Releases](https://github.com/cloudwithax/nodosumi/releases)
+2. Copy `nodosumi_libretro.so` to RetroArch's `cores/` and `nodosumi_libretro.info` to `info/`
+3. Put your Dreamcast BIOS at `<system>/dc/boot.bin`
 
 ## Building
 
