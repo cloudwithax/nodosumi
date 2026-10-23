@@ -1,7 +1,20 @@
 #include <chd.h>
 #include "core/core.h"
+#include "core/thread.h"
 #include "guest/gdrom/disc.h"
 #include "guest/gdrom/gdrom_types.h"
+
+/* decoding a hunk (8 sectors) takes ~2 ms on a 1.5 GHz cortex-a53, and games
+   stream several at once, so a worker thread decodes them ahead of the reader
+   into a cache instead of the emulation thread stalling on each one */
+#define CHD_CACHE_HUNKS 256
+#define CHD_READAHEAD 16
+
+struct chd_hunk {
+  int num;
+  unsigned stamp;
+  uint8_t *data;
+};
 
 struct chd {
   struct disc;
@@ -12,11 +25,87 @@ struct chd {
   int num_tracks;
 
   chd_file *chd;
-  /* hunk data cache */
-  uint8_t *hunkmem;
-  /* last hunknum read */
-  int oldhunk;
+
+  /* only the worker touches chd once it's running. the rest is shared, under
+     mutex */
+  thread_t thread;
+  mutex_t mutex;
+  cond_t wake;
+  cond_t done;
+  int quit;
+  /* hunk last read, the worker decodes it and the ones after it */
+  int want;
+  struct chd_hunk cache[CHD_CACHE_HUNKS];
+  unsigned stamp;
+  uint8_t *workmem;
 };
+
+static struct chd_hunk *chd_lookup(struct chd *chd, int num) {
+  for (int i = 0; i < CHD_CACHE_HUNKS; i++) {
+    if (chd->cache[i].num == num) {
+      return &chd->cache[i];
+    }
+  }
+  return NULL;
+}
+
+static int chd_next_hunk(struct chd *chd) {
+  const chd_header *head = chd_get_header(chd->chd);
+  if (chd->want < 0) {
+    return -1;
+  }
+  for (int i = 0; i < CHD_READAHEAD; i++) {
+    int num = chd->want + i;
+    if (num >= (int)head->totalhunks) {
+      break;
+    }
+    if (!chd_lookup(chd, num)) {
+      return num;
+    }
+  }
+  return -1;
+}
+
+static void *chd_thread(void *data) {
+  struct chd *chd = data;
+
+  mutex_lock(chd->mutex);
+
+  while (1) {
+    int num;
+    while (!chd->quit && (num = chd_next_hunk(chd)) < 0) {
+      cond_wait(chd->wake, chd->mutex);
+    }
+    if (chd->quit) {
+      break;
+    }
+    mutex_unlock(chd->mutex);
+
+    int err = chd_read(chd->chd, num, chd->workmem);
+    CHECK_EQ(err, CHDERR_NONE, "chd_read failed hunk=%d", num);
+
+    mutex_lock(chd->mutex);
+
+    /* replace the least recently used hunk */
+    struct chd_hunk *hunk = &chd->cache[0];
+    for (int i = 1; i < CHD_CACHE_HUNKS; i++) {
+      if (chd->cache[i].stamp < hunk->stamp) {
+        hunk = &chd->cache[i];
+      }
+    }
+    uint8_t *tmp = hunk->data;
+    hunk->data = chd->workmem;
+    chd->workmem = tmp;
+    hunk->num = num;
+    hunk->stamp = ++chd->stamp;
+
+    cond_signal(chd->done);
+  }
+
+  mutex_unlock(chd->mutex);
+
+  return NULL;
+}
 
 static void chd_read_sector(struct disc *disc, struct track *track, int fad,
                             void *dst) {
@@ -26,15 +115,25 @@ static void chd_read_sector(struct disc *disc, struct track *track, int fad,
   int cad = fad - track->file_offset;
   int hunknum = (cad * head->unitbytes) / head->hunkbytes;
   int hunkofs = (cad * head->unitbytes) % head->hunkbytes;
+  CHECK(hunknum >= 0 && hunknum < (int)head->totalhunks,
+        "chd_read_sector failed fad=%d", fad);
 
-  /* each hunk holds ~8 sectors, optimize when reading contiguous sectors */
-  if (hunknum != chd->oldhunk) {
-    int err = chd_read(chd->chd, hunknum, chd->hunkmem);
-    CHECK_EQ(err, CHDERR_NONE, "chd_read_sector failed fad=%d", fad);
-    chd->oldhunk = hunknum;
+  mutex_lock(chd->mutex);
+
+  if (chd->want != hunknum) {
+    chd->want = hunknum;
+    cond_signal(chd->wake);
   }
 
-  memcpy(dst, chd->hunkmem + hunkofs + track->header_size, 2048);
+  struct chd_hunk *hunk;
+  while (!(hunk = chd_lookup(chd, hunknum))) {
+    cond_wait(chd->done, chd->mutex);
+  }
+  hunk->stamp = ++chd->stamp;
+
+  memcpy(dst, hunk->data + hunkofs + track->header_size, 2048);
+
+  mutex_unlock(chd->mutex);
 }
 
 static void chd_get_toc(struct disc *disc, int area, struct track **first_track,
@@ -80,7 +179,21 @@ static int chd_get_format(struct disc *disc) {
 static void chd_destroy(struct disc *disc) {
   struct chd *chd = (struct chd *)disc;
 
-  free(chd->hunkmem);
+  if (chd->thread) {
+    mutex_lock(chd->mutex);
+    chd->quit = 1;
+    cond_signal(chd->wake);
+    mutex_unlock(chd->mutex);
+    thread_join(chd->thread, NULL);
+    cond_destroy(chd->done);
+    cond_destroy(chd->wake);
+    mutex_destroy(chd->mutex);
+  }
+
+  for (int i = 0; i < CHD_CACHE_HUNKS; i++) {
+    free(chd->cache[i].data);
+  }
+  free(chd->workmem);
 
   chd_close(chd->chd);
 }
@@ -95,8 +208,12 @@ static int chd_parse(struct disc *disc, const char *filename, int verbose) {
 
   /* allocate storage for sector reads */
   const chd_header *head = chd_get_header(chd->chd);
-  chd->hunkmem = malloc(head->hunkbytes);
-  chd->oldhunk = -1;
+  for (int i = 0; i < CHD_CACHE_HUNKS; i++) {
+    chd->cache[i].num = -1;
+    chd->cache[i].data = malloc(head->hunkbytes);
+  }
+  chd->workmem = malloc(head->hunkbytes);
+  chd->want = -1;
 
   /* parse tracks */
   char tmp[512];
@@ -212,6 +329,12 @@ static int chd_parse(struct disc *disc, const char *filename, int verbose) {
   high->leadout_fad = 0x861b4;
   high->first_track = 2;
   high->last_track = chd->num_tracks - 1;
+
+  chd->mutex = mutex_create();
+  chd->wake = cond_create();
+  chd->done = cond_create();
+  chd->thread = thread_create(&chd_thread, "chd", chd);
+  CHECK_NOTNULL(chd->thread);
 
   return 1;
 }

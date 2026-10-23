@@ -92,7 +92,9 @@
 
 #define NO_MATCH					(~0)
 
+#ifdef WANT_RAW_DATA_SECTOR
 static const uint8_t s_cd_sync_header[12] = { 0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00 };
+#endif
 
 // V3-V4 entry types
 enum
@@ -623,12 +625,14 @@ chd_error cdlz_codec_decompress(void *codec, const uint8_t *src, uint32_t comple
 		memcpy(&dest[framenum * CD_FRAME_SIZE + CD_MAX_SECTOR_DATA], &cdlz->buffer[frames * CD_MAX_SECTOR_DATA + framenum * CD_MAX_SUBCODE_DATA], CD_MAX_SUBCODE_DATA);
 
 		// reconstitute the ECC data and sync header
+#ifdef WANT_RAW_DATA_SECTOR
 		uint8_t *sector = &dest[framenum * CD_FRAME_SIZE];
 		if ((src[framenum / 8] & (1 << (framenum % 8))) != 0)
 		{
 			memcpy(sector, s_cd_sync_header, sizeof(s_cd_sync_header));
 			ecc_generate(sector);
 		}
+#endif
 	}
 	return CHDERR_NONE;
 }
@@ -682,12 +686,14 @@ chd_error cdzl_codec_decompress(void *codec, const uint8_t *src, uint32_t comple
 		memcpy(&dest[framenum * CD_FRAME_SIZE + CD_MAX_SECTOR_DATA], &cdzl->buffer[frames * CD_MAX_SECTOR_DATA + framenum * CD_MAX_SUBCODE_DATA], CD_MAX_SUBCODE_DATA);
 
 		// reconstitute the ECC data and sync header
+#ifdef WANT_RAW_DATA_SECTOR
 		uint8_t *sector = &dest[framenum * CD_FRAME_SIZE];
 		if ((src[framenum / 8] & (1 << (framenum % 8))) != 0)
 		{
 			memcpy(sector, s_cd_sync_header, sizeof(s_cd_sync_header));
 			ecc_generate(sector);
 		}
+#endif
 	}
 	return CHDERR_NONE;
 }
@@ -2103,8 +2109,10 @@ static chd_error hunk_read_into_memory(chd_file *chd, UINT32 hunknum, UINT8 *des
 				if (codec==NULL)
 					return CHDERR_DECOMPRESSION_ERROR;
 				chd->codecintf[rawmap[0]]->decompress(codec, chd->compressed, blocklen, dest, chd->header.hunkbytes);
+#ifdef VERIFY_BLOCK_CRCS
 				if (dest != NULL && crc16(dest, chd->header.hunkbytes) != blockcrc)
 					return CHDERR_DECOMPRESSION_ERROR;
+#endif
 				return CHDERR_NONE;
 
 			case COMPRESSION_NONE:
