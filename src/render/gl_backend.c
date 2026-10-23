@@ -977,6 +977,7 @@ static struct shader_prog *r_get_ta_program(struct render_backend *r,
 
 void r_end_ui_surfaces(struct render_backend *r) {
   glDisable(GL_SCISSOR_TEST);
+  glBindVertexArray(0);
 }
 
 void r_draw_ui_surface(struct render_backend *r,
@@ -1068,6 +1069,10 @@ void r_end_ta_surfaces(struct render_backend *r) {
     glDisable(GL_STENCIL_TEST);
     r->ta_stencil = 0;
   }
+
+  /* leave no vao bound for the host, retroarch's gles drawing would otherwise
+     change this one's attribute state, leaving libmali fetching zeros */
+  glBindVertexArray(0);
 }
 
 static struct shader_prog *r_use_ta_program(struct render_backend *r,
@@ -1339,14 +1344,17 @@ void r_draw_pixels(struct render_backend *r, const uint8_t *pixels, int x,
                GL_UNSIGNED_BYTE, pixels);
   glBindTexture(GL_TEXTURE_2D, 0);
 
+  /* the host's framebuffer isn't always 0, e.g. retroarch hands out an fbo */
+  GLint host_fbo;
+  glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &host_fbo);
   glBindFramebuffer(GL_READ_FRAMEBUFFER, r->pixel_fbo);
   glReadBuffer(GL_COLOR_ATTACHMENT0);
-  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, host_fbo);
   glBlitFramebuffer(x, y + height, x + width, y, r->viewport.x, r->viewport.y,
                     r->viewport.x + r->viewport.w,
                     r->viewport.y + r->viewport.h, GL_COLOR_BUFFER_BIT,
                     GL_LINEAR);
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  glBindFramebuffer(GL_FRAMEBUFFER, host_fbo);
 }
 
 void r_viewport(struct render_backend *r, int x, int y, int width, int height) {
