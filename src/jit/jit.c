@@ -189,6 +189,7 @@ static struct jit_block *jit_alloc_block(struct jit *jit, uint32_t guest_addr,
 
   block->guest_addr = guest_addr;
   block->guest_size = guest_size;
+  jit->max_guest_size = MAX(jit->max_guest_size, guest_size);
 
   /* allocate meta data structs for the original guest code */
   block->source_map = calloc(block->guest_size, sizeof(void *));
@@ -222,6 +223,41 @@ void jit_free_code(struct jit *jit) {
 
   /* have the backend reset its code buffers */
   jit->backend->reset(jit->backend);
+}
+
+void jit_invalidate_range(struct jit *jit, uint32_t addr, int size) {
+  /* invalidate code that dma or the hle bios wrote over. games load new code
+     over old without resetting the icache, which on hardware only ever holds
+     8kb of it. the same memory is mirrored at addresses differing in the top
+     3 bits, so each mirror's blocks are searched */
+  uint32_t begin = addr & 0x1fffffff;
+  uint32_t end = begin + size;
+  uint32_t from = begin - MIN(begin, (uint32_t)jit->max_guest_size);
+
+  for (uint32_t mirror = 0; mirror < 8; mirror++) {
+    struct jit_block search;
+    search.guest_addr = ((mirror << 29) | from) - 1;
+
+    struct rb_node *it =
+        mirror || from
+            ? rb_upper_bound(&jit->blocks, &search.it, &block_map_cb)
+            : rb_first(&jit->blocks);
+
+    while (it) {
+      struct jit_block *block = container_of(it, struct jit_block, it);
+      uint32_t lo = block->guest_addr & 0x1fffffff;
+
+      if ((block->guest_addr >> 29) != mirror || lo >= end) {
+        break;
+      }
+
+      if (block->state == JIT_STATE_VALID && lo + block->guest_size > begin) {
+        jit_invalidate_block(jit, block, 0);
+      }
+
+      it = rb_next(it);
+    }
+  }
 }
 
 void jit_invalidate_code(struct jit *jit) {

@@ -6,6 +6,7 @@
 #include "guest/memory.h"
 #include "guest/rom/flash.h"
 #include "guest/sh4/sh4.h"
+#include "jit/jit.h"
 
 #if 0
 #define LOG_SYSCALL LOG_INFO
@@ -203,6 +204,7 @@ static void bios_gdrom_mainloop(struct bios *bios) {
         read += n;
         rem -= n;
       }
+      jit_invalidate_range(dc->sh4->jit, dst, read);
 
       /* record size transferred */
       bios->result[2] = read;

@@ -83,6 +83,7 @@ struct jit {
   struct jit_block *curr_block;
   struct rb_tree blocks;
   struct rb_tree reverse_blocks;
+  int max_guest_size;
 
   /* compiled block perf map */
   FILE *perf_map;
@@ -100,6 +101,7 @@ void jit_run(struct jit *jit, int cycles);
 void jit_compile_code(struct jit *jit, uint32_t guest_addr);
 void jit_link_code(struct jit *jit, void *code, uint32_t target);
 void jit_invalidate_code(struct jit *jit);
+void jit_invalidate_range(struct jit *jit, uint32_t addr, int size);
 void jit_free_code(struct jit *jit);
 
 #endif
