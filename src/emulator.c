@@ -1312,15 +1312,19 @@ void emu_destroy(struct emu *emu) {
     cond_broadcast(emu->res_cond);
     mutex_unlock(emu->res_mutex);
     thread_join(emu->conv_thread, &result);
+  }
 
+  emu_stop_tracing(emu);
+  /* takes res_mutex, so it goes before the mutexes are destroyed */
+  emu_vid_destroyed(emu);
+
+  if (emu->multi_threaded) {
     mutex_destroy(emu->req_mutex);
     cond_destroy(emu->req_cond);
     mutex_destroy(emu->res_mutex);
     cond_destroy(emu->res_cond);
   }
 
-  emu_stop_tracing(emu);
-  emu_vid_destroyed(emu);
   dc_destroy(emu->dc);
   free(emu);
 }
