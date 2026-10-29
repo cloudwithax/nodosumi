@@ -134,7 +134,7 @@ VRegister a64_backend_vreg(struct a64_backend *backend,
 
 int a64_backend_save_regs(struct a64_backend *backend, MacroAssembler &e,
                           int mask) {
-  /* fixed 160-byte frame header: lr, fp, x19-x26, d8-d15 */
+  /* fixed 160-byte frame header: lr, fp, x19-x26, d8-d15, x27-x28 */
   e.Stp(x29, x30, MemOperand(sp, -A64_STACK_LOCALS, PreIndex));
   e.Stp(x19, x20, MemOperand(sp, 16));
   e.Stp(x21, x22, MemOperand(sp, 32));
@@ -148,11 +148,13 @@ int a64_backend_save_regs(struct a64_backend *backend, MacroAssembler &e,
   e.Str(d13, MemOperand(sp, 120));
   e.Str(d14, MemOperand(sp, 128));
   e.Str(d15, MemOperand(sp, 136));
+  e.Stp(x27, x28, MemOperand(sp, 144));
   return A64_STACK_LOCALS;
 }
 
 void a64_backend_restore_regs(struct a64_backend *backend, MacroAssembler &e,
                               int mask) {
+  e.Ldp(x27, x28, MemOperand(sp, 144));
   e.Ldr(d8, MemOperand(sp, 80));
   e.Ldr(d9, MemOperand(sp, 88));
   e.Ldr(d10, MemOperand(sp, 96));
