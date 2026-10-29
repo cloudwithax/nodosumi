@@ -1,5 +1,6 @@
 #include "guest/holly/holly.h"
 #include "core/state.h"
+#include "core/ftrace.h"
 #include "guest/dreamcast.h"
 #include "guest/gdrom/gdrom.h"
 #include "guest/maple/maple.h"
@@ -87,7 +88,15 @@ static void holly_gdrom_dma(struct holly *hl) {
 /*
  * maple dma
  */
+static void holly_maple_dma_inner(struct holly *hl);
+
 static void holly_maple_dma(struct holly *hl) {
+  FZ_B(z_maple);
+  holly_maple_dma_inner(hl);
+  FZ_E(z_maple);
+}
+
+static void holly_maple_dma_inner(struct holly *hl) {
   if (!*hl->SB_MDEN) {
     *hl->SB_MDST = 0;
     return;

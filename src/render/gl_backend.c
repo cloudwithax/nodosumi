@@ -187,6 +187,7 @@ struct render_backend {
   int ta_shadow;
 };
 
+struct r_gl_stats r_gl_stats;
 
 #include "render/ta.glsl"
 #include "render/ui.glsl"
@@ -1120,17 +1121,20 @@ static struct shader_prog *r_use_ta_program(struct render_backend *r,
   if (program->prog != r->ta_prog) {
     glUseProgram(program->prog);
     r->ta_prog = program->prog;
+    r_gl_stats.progs++;
   }
 
   /* the uber program stands in for variants still compiling */
   if (program == &r->uber && idx != program->attrs) {
     glUniform1i(program->loc[UNIFORM_ATTRS], idx);
+    r_gl_stats.uniforms++;
     program->attrs = idx;
   }
 
   /* bind global uniforms if they've changed */
   if (program->uniform_token != r->uniform_token) {
     glUniform4fv(program->loc[UNIFORM_VIDEO_SCALE], 1, r->uniform_video_scale);
+    r_gl_stats.uniforms++;
     program->uniform_token = r->uniform_token;
   }
 
@@ -1216,6 +1220,7 @@ void r_draw_ta_surface(struct render_backend *r,
   int depth_write = surf->params.depth_write;
   if (depth_write != r->ta_depth_write) {
     glDepthMask(depth_write);
+    r_gl_stats.states++;
     r->ta_depth_write = depth_write;
   }
 
@@ -1230,6 +1235,7 @@ void r_draw_ta_surface(struct render_backend *r,
       glDepthFunc(depth_funcs[depth_func]);
     }
     r->ta_depth_func = depth_func;
+    r_gl_stats.states++;
   }
 
   int cull = surf->params.cull;
@@ -1243,6 +1249,7 @@ void r_draw_ta_surface(struct render_backend *r,
       glCullFace(cull_face[cull]);
     }
     r->ta_cull = cull;
+    r_gl_stats.states++;
   }
 
   int blend = 0;
@@ -1261,12 +1268,14 @@ void r_draw_ta_surface(struct render_backend *r,
                   blend_funcs[surf->params.dst_blend]);
     }
     r->ta_blend = blend;
+    r_gl_stats.states++;
   }
 
   int shadow = surf->params.shadow;
   if (r->ta_stencil && shadow != r->ta_shadow) {
     glStencilFunc(GL_ALWAYS, shadow ? 0x80 : 0, 0xff);
     r->ta_shadow = shadow;
+    r_gl_stats.states++;
   }
 
   struct shader_prog *program = r_use_ta_program(r, r_ta_program_idx(surf));
@@ -1275,6 +1284,7 @@ void r_draw_ta_surface(struct render_backend *r,
   int alpha_ref = surf->params.alpha_ref;
   if (alpha_ref != program->alpha_ref) {
     glUniform1f(program->loc[UNIFORM_ALPHA_REF], alpha_ref / 255.0f);
+    r_gl_stats.uniforms++;
     program->alpha_ref = alpha_ref;
   }
 
@@ -1283,9 +1293,11 @@ void r_draw_ta_surface(struct render_backend *r,
     if (tex->texture != r->ta_texture) {
       r_bind_texture(r, MAP_DIFFUSE, tex->texture);
       r->ta_texture = tex->texture;
+      r_gl_stats.binds++;
     }
   }
 
+  r_gl_stats.draws++;
   glDrawRangeElements(GL_TRIANGLES, surf->min_vert, surf->max_vert,
                       surf->num_verts, GL_UNSIGNED_SHORT,
                       (void *)(intptr_t)(r->ta_ibo_offset +

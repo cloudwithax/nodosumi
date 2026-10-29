@@ -1,5 +1,6 @@
 #include "guest/sh4/sh4.h"
 #include "core/core.h"
+#include "core/ftrace.h"
 #include "core/state.h"
 #include "guest/bios/bios.h"
 #include "guest/dreamcast.h"
@@ -158,7 +159,10 @@ static int sh4_compile_code(struct sh4 *sh4, uint32_t addr) {
   uint8_t *runs = &sh4->interp_runs[(addr & sh4->guest->addr_mask) >> 1];
   if (*runs < g_interp_runs) {
     (*runs)++;
-    return sh4_interpret(sh4, addr);
+    FZF_B(z_sh4_interp);
+    int cycles = sh4_interpret(sh4, addr);
+    FZF_E(z_sh4_interp);
+    return cycles;
   }
   jit_compile_code(sh4->jit, addr);
   return 0;
@@ -222,7 +226,9 @@ static void sh4_run(struct device *dev, int64_t ns) {
   int cycles = (int)NANO_TO_CYCLES(ns, SH4_CLOCK_FREQ);
   cycles = MAX(cycles, 1);
 
+  FZ_B(z_sh4);
   jit_run(sh4->jit, cycles);
+  FZ_E(z_sh4);
 
   prof_counter_add(COUNTER_sh4_instrs, sh4->ctx.ran_instrs);
 }

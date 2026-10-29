@@ -1,5 +1,6 @@
 #include "guest/aica/aica.h"
 #include "core/core.h"
+#include "core/ftrace.h"
 #include "core/filesystem.h"
 #include "core/state.h"
 #include "guest/aica/aica_types.h"
@@ -621,7 +622,15 @@ static sample_t aica_channel_step(struct aica *aica, struct aica_channel *ch) {
   return result;
 }
 
+static void aica_generate_frames_inner(struct aica *aica);
+
 static void aica_generate_frames(struct aica *aica) {
+  FZ_B(z_aica);
+  aica_generate_frames_inner(aica);
+  FZ_E(z_aica);
+}
+
+static void aica_generate_frames_inner(struct aica *aica) {
   struct dreamcast *dc = aica->dc;
   int16_t buffer[AICA_BATCH_SIZE * 2];
   sample_t mix[AICA_BATCH_SIZE] = {0};

@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "core/memory.h"
+#include "core/ftrace.h"
 #include "core/thread.h"
 #include "core/time.h"
 #include "file/trace.h"
@@ -517,14 +518,23 @@ static void emu_start_tracing(struct emu *emu) {
   LOG_INFO("begin tracing to %s", filename);
 }
 
+/* the time spent waiting for res_mutex is its own zone */
+static void emu_lock_res(struct emu *emu) {
+  FZ_B(z_res_lock);
+  mutex_lock(emu->res_mutex);
+  FZ_E(z_res_lock);
+}
+
 /*
  * dreamcast guest interface
  */
 static void emu_vblank_in(void *userdata, int vid_disabled) {
   struct emu *emu = userdata;
 
+  FT_I(vblank_in, vid_disabled);
+
   if (emu->multi_threaded) {
-    mutex_lock(emu->res_mutex);
+    emu_lock_res(emu);
   }
 
   emu->state = EMU_DRAWFRAME;
@@ -539,8 +549,10 @@ static void emu_vblank_in(void *userdata, int vid_disabled) {
 static void emu_vblank_out(void *userdata) {
   struct emu *emu = userdata;
 
+  FT_I(vblank_out, 0);
+
   if (emu->multi_threaded) {
-    mutex_lock(emu->res_mutex);
+    emu_lock_res(emu);
   }
 
   emu->state = EMU_ENDFRAME;
@@ -569,13 +581,17 @@ static void emu_finish_render(void *userdata) {
        finished, the emulation thread must be paused to avoid altering
        the yet-to-be-uploaded texture memory */
     int64_t t0 = g_stats_enabled > 0 ? time_nanoseconds() : 0;
-    mutex_lock(emu->res_mutex);
+    FT_B(finish_render_wait, emu->converting);
+    FZ_B(z_finish_render_wait);
+    emu_lock_res(emu);
 
     /* the context can only be converted until its render finishes, so wait for
        the video thread to take it rather than skip the frame */
     while (emu->converting || (emu->pending_ctx && !emu->no_take)) {
       cond_wait(emu->res_cond, emu->res_mutex);
     }
+    FZ_E(z_finish_render_wait);
+    FT_E(finish_render_wait, emu->pending_ctx != NULL);
     if (g_stats_enabled > 0) {
       g_stat_stall += time_nanoseconds() - t0;
     }
@@ -583,6 +599,7 @@ static void emu_finish_render(void *userdata) {
     /* if pending_ctx is non-NULL here, a frame is being skipped */
     if (emu->pending_ctx) {
       g_stat_skip++;
+      FT_I(skip, emu->frame);
     }
     emu->pending_ctx = NULL;
     cond_broadcast(emu->res_cond);
@@ -598,16 +615,22 @@ static void emu_start_render(void *userdata, struct ta_context *ctx) {
      texture source registered to assert synchronization between the emulator
      and video thread is working as expected */
   emu->frame++;
+  FT_B(start_render, emu->frame);
+  FZ_B(z_start_render);
 
   /* now that the video thread is sure to not be accessing the texture data,
      mark any textures dirty that were invalidated by a memory watch */
+  FZ_B(z_flush_modified);
   emu_flush_modified(emu, ctx);
+  FZ_E(z_flush_modified);
 
   /* register the source of each texture referenced by the context with the
      tile renderer. note, uploading the texture to the render backend happens
      lazily while converting the context. this registration just lets the
      backend know where the texture's source data is */
+  FZ_B(z_register_sources);
   emu_register_sources(emu, ctx);
+  FZ_E(z_register_sources);
 
   if (emu->trace_writer) {
     trace_writer_render_context(emu->trace_writer, ctx);
@@ -615,16 +638,24 @@ static void emu_start_render(void *userdata, struct ta_context *ctx) {
 
   if (emu->multi_threaded) {
     /* save off context and notify video thread that it's available */
-    mutex_lock(emu->res_mutex);
+    emu_lock_res(emu);
     if (g_stats_enabled > 0) {
       g_stat_post = time_nanoseconds();
     }
 
-    while (emu->converting) {
-      cond_wait(emu->res_cond, emu->res_mutex);
+    if (emu->converting) {
+      FT_B(start_render_wait, 0);
+      FZ_B(z_start_render_wait);
+      while (emu->converting) {
+        cond_wait(emu->res_cond, emu->res_mutex);
+      }
+      FZ_E(z_start_render_wait);
+      FT_E(start_render_wait, 0);
     }
 
+    FZ_B(z_evict);
     emu_evict_textures(emu);
+    FZ_E(z_evict);
     emu->pending_ctx = ctx;
     cond_broadcast(emu->res_cond);
 
@@ -633,6 +664,8 @@ static void emu_start_render(void *userdata, struct ta_context *ctx) {
     emu_evict_textures(emu);
     emu->pending_ctx = ctx;
   }
+  FZ_E(z_start_render);
+  FT_E(start_render, emu->frame);
 }
 
 static void emu_push_pixels(void *userdata, const uint8_t *data, int w, int h) {
@@ -647,7 +680,9 @@ static void emu_push_pixels(void *userdata, const uint8_t *data, int w, int h) {
 
 static void emu_push_audio(void *userdata, const int16_t *data, int frames) {
   struct emu *emu = userdata;
+  FZ_B(z_audio_push);
   audio_push(emu->host, data, frames);
+  FZ_E(z_audio_push);
 }
 
 /*
@@ -690,6 +725,9 @@ static int64_t thread_cpu_ns() {
 
 static void *emu_run_thread(void *data) {
   struct emu *emu = data;
+  int64_t ft_frame = 0;
+
+  ftrace_thread("emu");
 
   while (1) {
     /* wait for video thread to request a frame to be ran */
@@ -705,7 +743,13 @@ static void *emu_run_thread(void *data) {
     }
 
     int64_t c0 = thread_cpu_ns(), w0 = time_nanoseconds();
+    FT_B(emu_frame, ft_frame);
+    FZ_B(z_emu);
     emu_run_until_vblank(emu);
+    FZ_E(z_emu);
+    FT_E(emu_frame, ft_frame);
+    ftrace_flush();
+    ft_frame++;
     g_stat_ecpu = thread_cpu_ns() - c0;
     g_stat_ewall = time_nanoseconds() - w0;
 
@@ -782,21 +826,30 @@ static void emu_convert_pending(struct emu *emu) {
   emu->num_evicted = 0;
 
   int64_t c0 = g_stats_enabled ? time_nanoseconds() : 0;
+  FT_B(convert, ctx->size);
+  FZ_B(z_convert);
   tr_convert_context(emu->r, emu, &emu_find_target, ctx,
                      &emu->vid_rc[conv_idx]);
 
   /* rt isn't presented, draw it into its texture now */
   int rtt = ctx->rtt;
   if (rtt) {
+    FZ_B(z_conv_rtt);
     emu_render_target(emu, ctx, &emu->vid_rc[conv_idx]);
+    FZ_E(z_conv_rtt);
   }
+  FZ_E(z_convert);
+  FT_E(convert, rtt);
+  FT_C(params, ctx->size);
+  FT_C(verts, emu->vid_rc[conv_idx].num_verts);
+  FT_C(surfs, emu->vid_rc[conv_idx].num_surfs);
 
   if (g_stats_enabled) {
     g_stat_conv += time_nanoseconds() - c0;
   }
 
   if (emu->multi_threaded) {
-    mutex_lock(emu->res_mutex);
+    emu_lock_res(emu);
     emu->converting = 0;
     cond_broadcast(emu->res_cond);
   }
@@ -810,11 +863,14 @@ static void emu_convert_pending(struct emu *emu) {
 static void *emu_conv_thread(void *data) {
   struct emu *emu = data;
 
-  mutex_lock(emu->res_mutex);
+  ftrace_thread("conv");
+
+  emu_lock_res(emu);
   while (!emu->conv_quit) {
     struct ta_context *ctx = emu->pending_ctx;
     if (ctx && !ctx->rtt && !emu->converting && !emu->no_take && emu->r) {
       emu_convert_pending(emu);
+      ftrace_flush();
     } else {
       cond_wait(emu->res_cond, emu->res_mutex);
     }
@@ -835,8 +891,9 @@ static void emu_convert_target(struct emu *emu) {
 void emu_sync(struct emu *emu) {
   /* the emu thread holds req_mutex during a frame. don't let
      emu_finish_render wait on a context nobody will take */
+  FT_I(emu_sync, 0);
   if (emu->multi_threaded) {
-    mutex_lock(emu->res_mutex);
+    emu_lock_res(emu);
     int no_take = emu->no_take;
     emu->no_take = 1;
     cond_broadcast(emu->res_cond);
@@ -852,7 +909,7 @@ void emu_sync(struct emu *emu) {
     }
     mutex_unlock(emu->req_mutex);
 
-    mutex_lock(emu->res_mutex);
+    emu_lock_res(emu);
     emu->no_take = no_take;
     cond_broadcast(emu->res_cond);
     mutex_unlock(emu->res_mutex);
@@ -935,9 +992,12 @@ int emu_begin_frame(struct emu *emu) {
   /* the sw pixel path shares vid_fb with the emu thread, so draw it before
      the next frame starts */
   if (psrc == EMU_SOURCE_PXL && !pdis) {
+    FZ_B(z_draw_pixels);
     r_draw_pixels(emu->r, emu->vid_fb.data, 0, 0, emu->vid_fb.width,
                   emu->vid_fb.height);
+    FZ_E(z_draw_pixels);
   }
+  FT_C(vid_src, psrc | (pdis << 4));
 
   /* start the emu thread first so the render below overlaps it. usually
      emu_end_frame started it already and it ran between calls */
@@ -946,19 +1006,33 @@ int emu_begin_frame(struct emu *emu) {
   } else if (emu->multi_threaded) {
     /* take a render target the running frame submitted, so it doesn't block
        at end of render */
-    mutex_lock(emu->res_mutex);
+    emu_lock_res(emu);
     emu_convert_target(emu);
     mutex_unlock(emu->res_mutex);
   }
 
   /* render last frame's context while the cpu runs this one */
   if (psrc == EMU_SOURCE_CTX && !pdis) {
+    FT_B(render, emu->vid_rc[pidx].num_surfs);
+    FZ_B(z_render);
+    memset(&r_gl_stats, 0, sizeof(r_gl_stats));
     tr_render_context(emu->r, &emu->vid_rc[pidx]);
+    FZ_E(z_render);
+    FT_E(render, 0);
+    FT_C(gl_draws, r_gl_stats.draws);
+    FT_C(gl_progs, r_gl_stats.progs);
+    FT_C(gl_binds, r_gl_stats.binds);
+    FT_C(gl_states, r_gl_stats.states);
+    FT_C(gl_uniforms, r_gl_stats.uniforms);
   }
 
   /* textures replaced by those are never drawn again */
+  FZ_B(z_dead_tex);
   r_delete_dead_textures(emu->r);
+  FZ_E(z_dead_tex);
+  FZ_B(z_mipmaps);
   r_make_mipmaps(emu->r);
+  FZ_E(z_mipmaps);
 
   if (g_stats_enabled) {
     g_stat_render1 = time_nanoseconds();
@@ -980,14 +1054,18 @@ void emu_end_frame(struct emu *emu) {
      and block on req_mutex while a render target from vblank is still
      waiting. anything after vblank_out is dropped */
   if (emu->multi_threaded) {
-    mutex_lock(emu->res_mutex);
+    emu_lock_res(emu);
 
     while (emu->state == EMU_RUNFRAME || emu->state == EMU_DRAWFRAME ||
            emu->converting || emu->pending_ctx) {
       if (emu->pending_ctx && emu->pending_ctx->rtt && !emu->converting) {
         emu_convert_pending(emu);
       } else {
+        FT_B(end_frame_wait, emu->state);
+        FZ_B(z_end_frame_wait);
         cond_wait(emu->res_cond, emu->res_mutex);
+        FZ_E(z_end_frame_wait);
+        FT_E(end_frame_wait, emu->state);
       }
     }
   }
@@ -1178,7 +1256,7 @@ void emu_vid_destroyed(struct emu *emu) {
 
   /* stop the conv thread using it */
   if (emu->multi_threaded) {
-    mutex_lock(emu->res_mutex);
+    emu_lock_res(emu);
     while (emu->converting) {
       cond_wait(emu->res_cond, emu->res_mutex);
     }
@@ -1207,7 +1285,7 @@ void emu_vid_destroyed(struct emu *emu) {
 
 void emu_vid_created(struct emu *emu, struct render_backend *r) {
   if (emu->multi_threaded) {
-    mutex_lock(emu->res_mutex);
+    emu_lock_res(emu);
     emu->r = r;
     cond_broadcast(emu->res_cond);
     mutex_unlock(emu->res_mutex);
@@ -1229,7 +1307,7 @@ void emu_destroy(struct emu *emu) {
     void *result;
     thread_join(emu->run_thread, &result);
 
-    mutex_lock(emu->res_mutex);
+    emu_lock_res(emu);
     emu->conv_quit = 1;
     cond_broadcast(emu->res_cond);
     mutex_unlock(emu->res_mutex);

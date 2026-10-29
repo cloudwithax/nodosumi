@@ -20,6 +20,7 @@
 
 #include "guest/pvr/ta.h"
 #include "core/core.h"
+#include "core/ftrace.h"
 #include "core/exception_handler.h"
 #include "core/filesystem.h"
 #include "core/list.h"
@@ -599,6 +600,7 @@ static void ta_render_context_end(void *data) {
   struct holly *hl = ta->dc->holly;
 
   ta->end_timers[ctx - ta->contexts] = NULL;
+  FT_I(ta_render_end, 0);
 
   /* ensure the client has finished rendering */
   dc_finish_render(ta->dc);
@@ -638,6 +640,8 @@ static void ta_render_context(struct ta *ta, struct ta_context *ctx) {
   struct scheduler *sched = ta->dc->sched;
 
   prof_counter_add(COUNTER_ta_renders, 1);
+  FT_I(ta_render, ctx->size);
+  FZ_B(z_ta_render);
 
   ctx->rendering = 1;
 
@@ -654,6 +658,7 @@ static void ta_render_context(struct ta *ta, struct ta_context *ctx) {
   ctx->userdata = ta;
   ta->end_timers[ctx - ta->contexts] =
       sched_start_timer(sched, &ta_render_context_end, ctx, end);
+  FZ_E(z_ta_render);
 }
 
 /*
@@ -828,8 +833,10 @@ void ta_texture_write(struct ta *ta, uint32_t dst, const uint8_t *src,
 
   CHECK(*hl->SB_LMMODE0 == 0);
 
+  FZ_B(z_ta_tex);
   dst &= 0xeeffffff;
   memcpy(&ta->vram[dst], src, size);
+  FZ_E(z_ta_tex);
 }
 
 void ta_yuv_write(struct ta *ta, uint32_t dst, const uint8_t *src, int size) {
@@ -838,11 +845,13 @@ void ta_yuv_write(struct ta *ta, uint32_t dst, const uint8_t *src, int size) {
   CHECK(*hl->SB_LMMODE0 == 0);
   CHECK(size % ta->yuv_macroblock_size == 0);
 
+  FZ_B(z_ta_yuv);
   const uint8_t *end = src + size;
   while (src < end) {
     ta_yuv_process_macroblock(ta, src);
     src += ta->yuv_macroblock_size;
   }
+  FZ_E(z_ta_yuv);
 }
 
 /* vertex types whose params are 32 bytes, the rest are 64. see
@@ -875,8 +884,10 @@ static void poly_sync(struct ta *ta) {
 
 static __attribute__((noinline)) void poly_parse(struct ta *ta,
                                                           const uint8_t *src) {
+  FZF_B(z_ta_poly);
   ta_write_context(ta, ta->curr_context, src, 32);
   poly_sync(ta);
+  FZF_E(z_ta_poly);
 }
 
 /* one store queue flush, nearly every poly write. vertex data is just
@@ -911,9 +922,11 @@ void ta_poly_write(struct ta *ta, uint32_t dst, const uint8_t *src, int size) {
      path */
   CHECK(size % 32 == 0);
 
+  FZF_B(z_ta_poly);
   for (int i = 0; i < size; i += 32) {
     ta_poly_write32(ta, src + i);
   }
+  FZF_E(z_ta_poly);
 }
 
 void ta_texture_info(struct ta *ta, union tsp tsp, union tcw tcw,

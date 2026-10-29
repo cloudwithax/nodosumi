@@ -1,4 +1,5 @@
 #include "guest/memory.h"
+#include "core/ftrace.h"
 #include "guest/sh4/sh4.h"
 #include "jit/jit.h"
 
@@ -27,7 +28,15 @@ static void sh4_dmac_check(struct sh4 *sh4, int channel) {
         "sh4_dmac_check only DDT DMA unsupported");
 }
 
+static void sh4_dmac_ddt_inner(struct sh4 *sh4, struct sh4_dtr *dtr);
+
 void sh4_dmac_ddt(struct sh4 *sh4, struct sh4_dtr *dtr) {
+  FZ_B(z_dmac);
+  sh4_dmac_ddt_inner(sh4, dtr);
+  FZ_E(z_dmac);
+}
+
+static void sh4_dmac_ddt_inner(struct sh4 *sh4, struct sh4_dtr *dtr) {
   struct memory *mem = sh4->dc->mem;
 
   /* FIXME this should be made asynchronous, at which point the significance

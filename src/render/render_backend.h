@@ -200,6 +200,12 @@ void r_begin_ta_surfaces(struct render_backend *r, int video_width,
                          int video_height, const struct ta_vertex *verts,
                          int num_verts, const uint16_t *indices, int num_indices,
                          int shadows);
+/* gl calls made by the ta surface path, for the frame tracer */
+struct r_gl_stats {
+  int draws, progs, binds, states, uniforms;
+};
+extern struct r_gl_stats r_gl_stats;
+
 void r_draw_ta_surface(struct render_backend *r, const struct ta_surface *surf);
 /* darken the shadow surfaces drawn so far where the volumes cover them, by
    drawing the black quad at shadow_vert over them */

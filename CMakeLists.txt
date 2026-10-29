@@ -209,6 +209,7 @@ set(RELIB_SOURCES
   src/core/memory.c
   src/core/option.c
   src/core/profiler.c
+  src/core/ftrace.c
   src/core/ringbuf.cc
   src/core/rb_tree.c
   src/core/sort.c

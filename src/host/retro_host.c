@@ -5,6 +5,7 @@
 #include <string.h>
 #include "core/core.h"
 #include "core/filesystem.h"
+#include "core/ftrace.h"
 #include "core/string.h"
 #include "core/thread.h"
 #include "core/time.h"
@@ -104,6 +105,24 @@ static int g_gl_ok = 0;
 static PFNGLINVALIDATEFRAMEBUFFERPROC invalidate_fb;
 static int g_stats = -1;
 
+/* gpu time of each frame's draw, with NODOSUMI_FTRACE and
+   GL_EXT_disjoint_timer_query */
+#define GL_TIME_ELAPSED_EXT 0x88BF
+#define GL_GPU_DISJOINT_EXT 0x8FBB
+#define GPU_QUERIES 8
+static struct {
+  int ok;
+  GLuint ids[GPU_QUERIES];
+  int64_t frame[GPU_QUERIES];
+  int busy[GPU_QUERIES];
+  int next;
+  void (*gen)(GLsizei, GLuint *);
+  void (*begin)(GLenum, GLuint);
+  void (*end)(GLenum);
+  void (*get)(GLuint, GLenum, GLuint *);
+} gpu_q;
+static int64_t g_run_frame;
+
 static char g_game[PATH_MAX];
 
 /* a game's discs, from its m3u playlist or the one disc it was loaded from,
@@ -176,6 +195,7 @@ static void audio_stat(const int16_t *data, int frames) {
 
 static void audio_flush() {
   mutex_lock(audio_mutex);
+  FT_C(audio_frames, ahead);
   if (ahead) {
     if (g_stats > 0) {
       audio_stat(audio_queue, ahead);
@@ -187,16 +207,138 @@ static void audio_flush() {
 }
 
 /*
+ * bot, for profiling runs: NODOSUMI_BOT=<file> drives port 0 from a script
+ * read one line at a time, so lines appended while it runs are picked up and
+ * a finished script replays frame for frame. lines:
+ *   <frames> [a b x y start up down left right l r] [jx=<-1..1>] [jy=..]
+ *   save <path> | load <path> | mark | loop | # comment
+ * at the end of the file the pad is let go until more lines arrive
+ */
+static FILE *bot_fp;
+static int bot_frames;
+static int bot_line;
+static long bot_mark = -1;
+static int bot_mark_line;
+static int16_t bot_state[NUM_CONTROLLER_DESC];
+static int bot_on = -1;
+
+bool retro_serialize(void *data, size_t size);
+bool retro_unserialize(const void *data, size_t size);
+size_t retro_serialize_size();
+
+static void bot_file_state(const char *path, int save) {
+  size_t size = retro_serialize_size();
+  void *data = malloc(size);
+  int ok = 0;
+  if (save) {
+    FILE *fp = fopen(path, "wb");
+    if (fp && retro_serialize(data, size)) {
+      ok = fwrite(data, 1, size, fp) == size;
+    }
+    if (fp) {
+      fclose(fp);
+    }
+  } else {
+    FILE *fp = fopen(path, "rb");
+    if (fp) {
+      ok = fread(data, 1, size, fp) == size && retro_unserialize(data, size);
+      fclose(fp);
+    }
+  }
+  free(data);
+  fprintf(stderr, "nodosumi: bot %s %s %s\n", save ? "save" : "load", path,
+          ok ? "ok" : "FAILED");
+}
+
+static void bot_set(const char *tok) {
+  static const char *names[] = {"a",     "b",    "start", "up", "down",
+                                "left",  "right", "x",    "y",  "jx",
+                                "jy",    "l",    "r"};
+  for (int i = 0; i < (int)ARRAY_SIZE(names); i++) {
+    size_t n = strlen(names[i]);
+    if (strncmp(tok, names[i], n)) {
+      continue;
+    }
+    if (tok[n] == '=') {
+      bot_state[i] = (int16_t)(atof(tok + n + 1) * INT16_MAX);
+      return;
+    }
+    if (!tok[n]) {
+      bot_state[i] = 1;
+      return;
+    }
+  }
+}
+
+/* advances the bot one frame, returns 0 when it's off */
+static int bot_step() {
+  if (bot_on < 0) {
+    const char *path = getenv("NODOSUMI_BOT");
+    bot_fp = path ? fopen(path, "r") : NULL;
+    bot_on = bot_fp != NULL;
+  }
+  if (!bot_on) {
+    return 0;
+  }
+  while (bot_frames <= 0) {
+    long pos = ftell(bot_fp);
+    char line[512];
+    if (!fgets(line, sizeof(line), bot_fp) || !strchr(line, '\n')) {
+      /* nothing new yet, let go of the pad and look again next frame */
+      fseek(bot_fp, pos, SEEK_SET);
+      memset(bot_state, 0, sizeof(bot_state));
+      return 1;
+    }
+    bot_line++;
+    char *tok = strtok(line, " \t\r\n");
+    if (!tok || tok[0] == '#') {
+      continue;
+    }
+    FT_I(bot_line, bot_line);
+    if (!strcmp(tok, "save") || !strcmp(tok, "load")) {
+      char *path = strtok(NULL, " \t\r\n");
+      if (path) {
+        bot_file_state(path, tok[0] == 's');
+      }
+      continue;
+    }
+    if (!strcmp(tok, "mark")) {
+      bot_mark = ftell(bot_fp);
+      bot_mark_line = bot_line;
+      continue;
+    }
+    if (!strcmp(tok, "loop")) {
+      if (bot_mark >= 0) {
+        fseek(bot_fp, bot_mark, SEEK_SET);
+        bot_line = bot_mark_line;
+      }
+      continue;
+    }
+    memset(bot_state, 0, sizeof(bot_state));
+    bot_frames = atoi(tok);
+    while ((tok = strtok(NULL, " \t\r\n"))) {
+      bot_set(tok);
+    }
+    fprintf(stderr, "nodosumi: bot line %d at frame %lld\n", bot_line,
+            (long long)g_run_frame);
+  }
+  bot_frames--;
+  return 1;
+}
+
+/*
  * input
  */
 static void input_poll(struct host *host) {
   input_poll_cb();
+  int bot = bot_step();
 
   /* send updates for any inputs that've changed */
   for (int i = 0; i < NUM_CONTROLLER_DESC; i++) {
     struct retro_input_descriptor *desc = &controller_desc[i];
     int16_t value =
-        input_state_cb(desc->port, desc->device, desc->index, desc->id);
+        bot ? (desc->port ? 0 : bot_state[i])
+            : input_state_cb(desc->port, desc->device, desc->index, desc->id);
 
     /* retroarch gives triggers as [0,1], the host layer wants [0,INT16_MAX] */
     if (desc->id == RETRO_DEVICE_ID_JOYPAD_L2 ||
@@ -283,6 +425,26 @@ static void video_context_reset() {
   glad_glProgramBinary = (PFNGLPROGRAMBINARYPROC)
       hw_render.get_proc_address("glProgramBinary");
 
+  memset(&gpu_q, 0, sizeof(gpu_q));
+  const char *exts = (const char *)glGetString(GL_EXTENSIONS);
+  if (ftrace_on && exts && strstr(exts, "GL_EXT_disjoint_timer_query")) {
+    gpu_q.gen = (void (*)(GLsizei, GLuint *))hw_render.get_proc_address(
+        "glGenQueriesEXT");
+    gpu_q.begin = (void (*)(GLenum, GLuint))hw_render.get_proc_address(
+        "glBeginQueryEXT");
+    gpu_q.end = (void (*)(GLenum))hw_render.get_proc_address("glEndQueryEXT");
+    gpu_q.get = (void (*)(GLuint, GLenum, GLuint *))hw_render.get_proc_address(
+        "glGetQueryObjectuivEXT");
+    gpu_q.ok = gpu_q.gen && gpu_q.begin && gpu_q.end && gpu_q.get;
+    if (gpu_q.ok) {
+      gpu_q.gen(GPU_QUERIES, gpu_q.ids);
+    }
+  }
+  if (ftrace_on) {
+    fprintf(stderr, "nodosumi: ftrace gpu timer queries %s\n",
+            gpu_q.ok ? "on" : "unavailable");
+  }
+
   /* keep compiled shaders between boots */
   char cache_path[PATH_MAX] = {0};
   if (g_game[0]) {
@@ -345,6 +507,8 @@ void retro_init() {
     audio_mutex = mutex_create();
   }
 
+  ftrace_init();
+
   /* set application directory */
   const char *sysdir = NULL;
   if (env_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sysdir)) {
@@ -384,6 +548,8 @@ void retro_deinit() {
 
   host_destroy(g_host);
   g_host = NULL;
+
+  ftrace_shutdown();
 }
 
 unsigned retro_api_version() {
@@ -553,6 +719,63 @@ void retro_reset() {
   emu_load(g_host->emu, g_discs[g_disc]);
 }
 
+static void gpu_query_poll() {
+  if (!gpu_q.ok) {
+    return;
+  }
+  for (int i = 0; i < GPU_QUERIES; i++) {
+    if (!gpu_q.busy[i]) {
+      continue;
+    }
+    GLuint avail = 0;
+    gpu_q.get(gpu_q.ids[i], GL_QUERY_RESULT_AVAILABLE, &avail);
+    if (!avail) {
+      continue;
+    }
+    GLuint ns = 0;
+    gpu_q.get(gpu_q.ids[i], GL_QUERY_RESULT, &ns);
+    GLint disjoint = 0;
+    glGetIntegerv(GL_GPU_DISJOINT_EXT, &disjoint);
+    FT_C(gpu_frame, gpu_q.frame[i]);
+    FT_C(gpu_ns, disjoint ? -1 : (int64_t)ns);
+    gpu_q.busy[i] = 0;
+  }
+}
+
+static void gpu_query_begin() {
+  if (!gpu_q.ok) {
+    return;
+  }
+  int i = gpu_q.next;
+  if (gpu_q.busy[i]) {
+    gpu_q.next = -1;
+    return;
+  }
+  gpu_q.begin(GL_TIME_ELAPSED_EXT, gpu_q.ids[i]);
+  gpu_q.frame[i] = g_run_frame;
+}
+
+static void gpu_query_end() {
+  if (!gpu_q.ok) {
+    return;
+  }
+  if (gpu_q.next < 0) {
+    /* every query still in flight, this frame went untimed */
+    for (int i = 0; i < GPU_QUERIES; i++) {
+      if (!gpu_q.busy[i]) {
+        gpu_q.next = i;
+      }
+    }
+    if (gpu_q.next < 0) {
+      gpu_q.next = 0;
+    }
+    return;
+  }
+  gpu_q.end(GL_TIME_ELAPSED_EXT);
+  gpu_q.busy[gpu_q.next] = 1;
+  gpu_q.next = (gpu_q.next + 1) % GPU_QUERIES;
+}
+
 void retro_run() {
   if (!g_gl_ok || !g_host->video.r) {
     video_cb(NULL, VIDEO_WIDTH, VIDEO_HEIGHT, 0);
@@ -563,14 +786,29 @@ void retro_run() {
     g_stats = getenv("NODOSUMI_STATS") != NULL;
   }
 
+  static int ft_named;
+  if (!ft_named) {
+    ftrace_thread("video");
+    ft_named = 1;
+  }
+  FT_B(retro_run, g_run_frame);
+  FZ_B(z_retro_run);
+
   int64_t stat_t0 = 0;
   int64_t stat_t1 = 0;
   if (g_stats) {
     stat_t0 = time_nanoseconds();
   }
 
+  FZ_B(z_input);
   input_poll(g_host);
+  FZ_E(z_input);
+  FZ_B(z_audio_flush);
   audio_flush();
+  FZ_E(z_audio_flush);
+  FZ_B(z_gpu_query);
+  gpu_query_poll();
+  FZ_E(z_gpu_query);
 
   /* bind the framebuffer provided by retroarch before calling into the
      emulator */
@@ -578,7 +816,11 @@ void retro_run() {
   glBindFramebuffer(GL_FRAMEBUFFER, fb);
 
   /* draw the last frame while the emu thread runs the next one */
+  FT_B(begin_frame, g_run_frame);
+  gpu_query_begin();
   int updated = emu_begin_frame(g_host->emu);
+  gpu_query_end();
+  FT_E(begin_frame, updated);
 
   /* a new picture doesn't need the old depth/stencil */
   if (updated && invalidate_fb) {
@@ -592,21 +834,33 @@ void retro_run() {
     stat_t1 = time_nanoseconds();
   }
 
+  FT_B(video_cb, updated);
+  FZ_B(z_video_cb);
   video_cb(updated ? RETRO_HW_FRAME_BUFFER_VALID : NULL,
            VIDEO_WIDTH, VIDEO_HEIGHT, 0);
+  FZ_E(z_video_cb);
+  FT_E(video_cb, updated);
 
+  static int64_t g_stat_out;
   if (g_stats) {
     int64_t stat_t2 = time_nanoseconds();
-    static int64_t g_stat_out;
     fprintf(stderr, "STAT present=%.2fms total=%.2fms gap=%.2fms\n",
             (double)(stat_t2 - stat_t1) / 1e6, (double)(stat_t2 - stat_t0) / 1e6,
             g_stat_out ? (double)(stat_t0 - g_stat_out) / 1e6 : 0.0);
-    emu_end_frame(g_host->emu);
-    g_stat_out = time_nanoseconds();
-    return;
   }
 
+  FT_B(end_frame, g_run_frame);
   emu_end_frame(g_host->emu);
+  FT_E(end_frame, g_run_frame);
+
+  if (g_stats) {
+    g_stat_out = time_nanoseconds();
+  }
+
+  FZ_E(z_retro_run);
+  FT_E(retro_run, g_run_frame);
+  ftrace_flush();
+  g_run_frame++;
 }
 
 size_t retro_serialize_size() {

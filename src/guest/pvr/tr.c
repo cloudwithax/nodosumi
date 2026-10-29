@@ -8,6 +8,7 @@
 #include "guest/pvr/tr.h"
 #include <limits.h>
 #include "core/core.h"
+#include "core/ftrace.h"
 #include "guest/pvr/ta.h"
 #include "guest/pvr/tex.h"
 
@@ -150,7 +151,9 @@ static texture_handle_t tr_convert_texture(struct tr *tr,
 
   /* if there's a dirty handle, destroy it before creating the new one */
   if (entry->handle && entry->dirty) {
+    FZ_B(z_conv_tex_destroy);
     r_destroy_texture(tr->r, entry->handle);
+    FZ_E(z_conv_tex_destroy);
     entry->handle = 0;
   }
 
@@ -171,8 +174,11 @@ static texture_handle_t tr_convert_texture(struct tr *tr,
               : 0;
 
   /* figure out the texture format */
+  FZ_B(z_conv_tex_decode);
   pvr_tex_decode(texture, width, height, stride, texture_fmt, tcw.pixel_fmt,
                  palette, ctx->palette_fmt, converted, sizeof(converted));
+  FZ_E(z_conv_tex_decode);
+  FT_C(textures_new, (int64_t)width << 16 | height);
 
   /* ignore trilinear filtering for now */
   enum filter_mode filter =
@@ -184,8 +190,10 @@ static texture_handle_t tr_convert_texture(struct tr *tr,
       tsp.clamp_v ? WRAP_CLAMP_TO_EDGE
                   : (tsp.flip_v ? WRAP_MIRRORED_REPEAT : WRAP_REPEAT);
 
+  FZ_B(z_conv_tex_upload);
   entry->handle = r_create_texture_async(tr->r, filter, wrap_u, wrap_v,
                                          mipmaps, width, height, converted);
+  FZ_E(z_conv_tex_upload);
   entry->filter = filter;
   entry->wrap_u = wrap_u;
   entry->wrap_v = wrap_v;
@@ -1082,8 +1090,10 @@ void tr_render_context_until(struct render_backend *r,
                              const struct tr_context *rc, int end_surf) {
   int stopped = 0;
 
+  FZ_B(z_render_upload);
   r_begin_ta_surfaces(r, rc->width, rc->height, rc->verts, rc->num_verts,
                       rc->indices, rc->num_indices, rc->num_modvols > 0);
+  FZ_E(z_render_upload);
 
   tr_render_list(r, rc, TA_LIST_OPAQUE, end_surf, &stopped);
   tr_render_list(r, rc, TA_LIST_PUNCH_THROUGH, end_surf, &stopped);
@@ -1181,14 +1191,18 @@ void tr_convert_context(struct render_backend *r, void *userdata,
   }
 
   /* sort surfaces if requested */
+  FZ_B(z_conv_sort);
   if (ctx->autosort) {
     tr_sort_surfaces(&tr, rc, TA_LIST_TRANSLUCENT);
     tr_sort_surfaces(&tr, rc, TA_LIST_PUNCH_THROUGH);
   }
+  FZ_E(z_conv_sort);
 
+  FZ_B(z_conv_indices);
   for (int i = 0; i < TA_NUM_LISTS; i++) {
     tr_generate_indices(&tr, rc, i);
   }
+  FZ_E(z_conv_indices);
 
   /* the volumes' triangles go after the surfaces' vertices, followed by the
      quad over the whole screen the shadow is drawn with, its alpha what the

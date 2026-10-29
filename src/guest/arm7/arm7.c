@@ -1,5 +1,6 @@
 #include "guest/arm7/arm7.h"
 #include "core/core.h"
+#include "core/ftrace.h"
 #include "core/state.h"
 #include "guest/aica/aica.h"
 #include "guest/dreamcast.h"
@@ -195,7 +196,9 @@ static void arm7_run(struct device *dev, int64_t ns) {
   static int64_t ARM7_CLOCK_FREQ = INT64_C(20000000);
   int cycles = (int)NANO_TO_CYCLES(ns, ARM7_CLOCK_FREQ);
 
+  FZ_B(z_arm7);
   jit_run(arm->jit, cycles);
+  FZ_E(z_arm7);
 
   prof_counter_add(COUNTER_arm7_instrs, arm->ctx.ran_instrs);
 }

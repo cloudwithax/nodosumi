@@ -1,6 +1,7 @@
 #include "jit/jit.h"
 #include "core/core.h"
 #include "core/exception_handler.h"
+#include "core/ftrace.h"
 #include "core/filesystem.h"
 #include "jit/ir/ir.h"
 #include "jit/jit_backend.h"
@@ -208,6 +209,8 @@ static struct jit_block *jit_alloc_block(struct jit *jit, uint32_t guest_addr,
 
 void jit_free_code(struct jit *jit) {
   prof_counter_add(COUNTER_jit_flushes, 1);
+  FT_I(jit_flush, 0);
+  FZ_B(z_jit_free);
   /* invalidate code pointers and remove block entries from lookup maps. this
      is only safe to use when no code is currently executing */
   struct rb_node *it = rb_first(&jit->blocks);
@@ -223,6 +226,7 @@ void jit_free_code(struct jit *jit) {
 
   /* have the backend reset its code buffers */
   jit->backend->reset(jit->backend);
+  FZ_E(z_jit_free);
 }
 
 void jit_invalidate_range(struct jit *jit, uint32_t addr, int size) {
@@ -230,6 +234,7 @@ void jit_invalidate_range(struct jit *jit, uint32_t addr, int size) {
      over old without resetting the icache, which on hardware only ever holds
      8kb of it. the same memory is mirrored at addresses differing in the top
      3 bits, so each mirror's blocks are searched */
+  FZ_B(z_jit_invalidate);
   uint32_t begin = addr & 0x1fffffff;
   uint32_t end = begin + size;
   uint32_t from = begin - MIN(begin, (uint32_t)jit->max_guest_size);
@@ -258,6 +263,7 @@ void jit_invalidate_range(struct jit *jit, uint32_t addr, int size) {
       it = rb_next(it);
     }
   }
+  FZ_E(z_jit_invalidate);
 }
 
 void jit_invalidate_code(struct jit *jit) {
@@ -357,7 +363,16 @@ static void jit_promote_fastmem(struct jit *jit, struct jit_block *block,
   }
 }
 
+static void jit_compile_code_inner(struct jit *jit, uint32_t guest_addr);
+
 void jit_compile_code(struct jit *jit, uint32_t guest_addr) {
+  FZ_B(z_jit_compile);
+  FT_I(jit_compile, guest_addr);
+  jit_compile_code_inner(jit, guest_addr);
+  FZ_E(z_jit_compile);
+}
+
+static void jit_compile_code_inner(struct jit *jit, uint32_t guest_addr) {
   int64_t compile_start = time_nanoseconds();
 #if 0
   LOG_INFO("jit_compile_block %s 0x%08x", jit->tag, guest_addr);
@@ -439,9 +454,19 @@ void jit_compile_code(struct jit *jit, uint32_t guest_addr) {
   }
 }
 
+static int jit_handle_exception_inner(struct jit *jit,
+                                      struct exception_state *ex);
+
 static int jit_handle_exception(void *data, struct exception_state *ex) {
   struct jit *jit = data;
+  FZ_B(z_fastmem_fault);
+  int res = jit_handle_exception_inner(jit, ex);
+  FZ_E(z_fastmem_fault);
+  return res;
+}
 
+static int jit_handle_exception_inner(struct jit *jit,
+                                      struct exception_state *ex) {
   /* see if there is a cached block corresponding to the current pc */
   struct jit_block *block = jit_lookup_block_reverse(jit, (void *)ex->pc);
 
@@ -467,6 +492,7 @@ static int jit_handle_exception(void *data, struct exception_state *ex) {
     found = i;
   }
   block->fastmem[found] = 0;
+  FT_I(jit_fastmem_fault, block->guest_addr);
 
   /* invalidate the block so it's recompiled on the next access */
   jit_invalidate_block(jit, block, 1);

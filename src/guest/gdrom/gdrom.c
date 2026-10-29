@@ -1,5 +1,6 @@
 #include "guest/gdrom/gdrom.h"
 #include "core/core.h"
+#include "core/ftrace.h"
 #include "core/state.h"
 #include "guest/dreamcast.h"
 #include "guest/gdrom/gdrom_replies.inc"
@@ -117,7 +118,16 @@ static void gdrom_spi_end(struct gdrom *gd) {
   gd->state = STATE_READ_ATA_CMD;
 }
 
+static void gdrom_spi_cdread_inner(struct gdrom *gd);
+
 static void gdrom_spi_cdread(struct gdrom *gd) {
+  FZ_B(z_gdrom);
+  FT_I(gd_read, ((int64_t)gd->cdr_first_sector << 16) | gd->cdr_num_sectors);
+  gdrom_spi_cdread_inner(gd);
+  FZ_E(z_gdrom);
+}
+
+static void gdrom_spi_cdread_inner(struct gdrom *gd) {
   struct holly *hl = gd->dc->holly;
 
   if (gd->cdr_dma) {

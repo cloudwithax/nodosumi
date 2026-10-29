@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "guest/scheduler.h"
 #include "core/core.h"
+#include "core/ftrace.h"
 #include "core/list.h"
 #include "core/state.h"
 #include "guest/dreamcast.h"
@@ -146,7 +147,15 @@ void sched_tick(struct scheduler *sched, int64_t ns) {
       sched_cancel_timer(sched, timer);
 
       /* run the timer */
-      timer->cb(timer->data);
+      if (FT_UNLIKELY(ftrace_on)) {
+        timer_cb cb = timer->cb;
+        int zone = ftrace_ptr_zone((const void *)cb);
+        ftrace_zone_begin(zone);
+        cb(timer->data);
+        ftrace_zone_end(zone);
+      } else {
+        timer->cb(timer->data);
+      }
     }
   }
 }

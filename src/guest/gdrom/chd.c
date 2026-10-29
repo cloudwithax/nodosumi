@@ -1,5 +1,6 @@
 #include <chd.h>
 #include "core/core.h"
+#include "core/ftrace.h"
 #include "core/thread.h"
 #include "guest/gdrom/disc.h"
 #include "guest/gdrom/gdrom_types.h"
@@ -69,6 +70,8 @@ static int chd_next_hunk(struct chd *chd) {
 static void *chd_thread(void *data) {
   struct chd *chd = data;
 
+  ftrace_thread("chd");
+
   mutex_lock(chd->mutex);
 
   while (1) {
@@ -81,8 +84,13 @@ static void *chd_thread(void *data) {
     }
     mutex_unlock(chd->mutex);
 
+    FT_B(chd_decode, num);
+    FZ_B(z_chd_decode);
     int err = chd_read(chd->chd, num, chd->workmem);
     CHECK_EQ(err, CHDERR_NONE, "chd_read failed hunk=%d", num);
+    FZ_E(z_chd_decode);
+    FT_E(chd_decode, num);
+    ftrace_flush();
 
     mutex_lock(chd->mutex);
 
@@ -118,6 +126,7 @@ static void chd_read_sector(struct disc *disc, struct track *track, int fad,
   CHECK(hunknum >= 0 && hunknum < (int)head->totalhunks,
         "chd_read_sector failed fad=%d", fad);
 
+  FZ_B(z_chd_read);
   mutex_lock(chd->mutex);
 
   if (chd->want != hunknum) {
@@ -125,15 +134,23 @@ static void chd_read_sector(struct disc *disc, struct track *track, int fad,
     cond_signal(chd->wake);
   }
 
-  struct chd_hunk *hunk;
-  while (!(hunk = chd_lookup(chd, hunknum))) {
-    cond_wait(chd->done, chd->mutex);
+  struct chd_hunk *hunk = chd_lookup(chd, hunknum);
+  if (!hunk) {
+    FT_I(chd_miss, hunknum);
+    FT_B(chd_wait, hunknum);
+    FZ_B(z_chd_wait);
+    while (!(hunk = chd_lookup(chd, hunknum))) {
+      cond_wait(chd->done, chd->mutex);
+    }
+    FZ_E(z_chd_wait);
+    FT_E(chd_wait, hunknum);
   }
   hunk->stamp = ++chd->stamp;
 
   memcpy(dst, hunk->data + hunkofs + track->header_size, 2048);
 
   mutex_unlock(chd->mutex);
+  FZ_E(z_chd_read);
 }
 
 static void chd_get_toc(struct disc *disc, int area, struct track **first_track,
