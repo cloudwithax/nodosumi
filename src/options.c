@@ -103,7 +103,7 @@ DEFINE_PERSISTENT_OPTION_INT(deadzone_3,   DEFAULT_DEADZONE,  "Deadzone for cont
 DEFINE_PERSISTENT_OPTION_STRING(aspect,    "4:3",             "Video aspect ratio");
 
 /* render */
-DEFINE_OPTION_INT(fast_depth,              0,                 "Depth from the vertex shader, faster but with some z-fighting");
+DEFINE_OPTION_INT(fast_depth,              1,                 "Depth from the vertex shader, faster but with some z-fighting");
 
 /* bios */
 DEFINE_PERSISTENT_OPTION_STRING(region,    "usa",             "System region");
