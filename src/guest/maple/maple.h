@@ -12,6 +12,7 @@ enum {
   MAPLE_DEV_NONE,
   MAPLE_DEV_CONTROLLER,
   MAPLE_DEV_VMU,
+  MAPLE_DEV_PURUPURU,
 };
 
 struct maple_device {
@@ -35,8 +36,10 @@ struct maple_device *maple_get_device(struct maple *mp, int port, int unit);
 void maple_handle_input(struct maple *mp, int port, int button, int16_t value);
 int maple_handle_frame(struct maple *mp, int port, union maple_frame *frame,
                        union maple_frame *res);
+void maple_vibrate(struct maple *mp, int port, float power, int duration_ms);
 
 struct maple_device *controller_create(struct maple *mp, int port);
 struct maple_device *vmu_create(struct maple *mp, int port);
+struct maple_device *purupuru_create(struct maple *mp, int port);
 
 #endif

@@ -64,6 +64,15 @@ void dc_push_audio(struct dreamcast *dc, const int16_t *data, int frames) {
   dc->push_audio(dc->userdata, data, frames);
 }
 
+void dc_vibrate(struct dreamcast *dc, int port, float power,
+                int duration_ms) {
+  if (!dc->vibrate) {
+    return;
+  }
+
+  dc->vibrate(dc->userdata, port, power, duration_ms);
+}
+
 void dc_destroy_device(struct device *dev) {
   list_remove(&dev->dc->devices, &dev->it);
 

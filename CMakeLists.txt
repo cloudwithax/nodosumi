@@ -229,6 +229,7 @@ set(RELIB_SOURCES
   src/guest/holly/holly.c
   src/guest/maple/controller.c
   src/guest/maple/maple.c
+  src/guest/maple/purupuru.c
   src/guest/maple/vmu.c
   src/guest/pvr/pvr.c
   src/guest/pvr/ta.c

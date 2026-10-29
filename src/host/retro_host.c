@@ -29,6 +29,7 @@ static retro_audio_sample_batch_t audio_batch_cb;
 static retro_video_refresh_t video_cb;
 static retro_input_poll_t input_poll_cb;
 static retro_input_state_t input_state_cb;
+static struct retro_rumble_interface rumble;
 
 /*
  * libretro host implementation
@@ -361,6 +362,61 @@ static void input_poll(struct host *host) {
 }
 
 /*
+ * rumble
+ */
+#define RUMBLE_PORTS 4
+
+/* the emu thread sets these, retro_run counts them down and drives the motors */
+static mutex_t rumble_mutex;
+static struct {
+  uint16_t strength;
+  int frames;
+  uint16_t applied;
+} rumble_state[RUMBLE_PORTS];
+
+void input_vibrate(struct host *host, int port, float power, int duration_ms) {
+  if (port < 0 || port >= RUMBLE_PORTS) {
+    return;
+  }
+
+  mutex_lock(rumble_mutex);
+  rumble_state[port].strength = (uint16_t)(power * UINT16_MAX);
+  rumble_state[port].frames = (duration_ms * 60 + 999) / 1000;
+  mutex_unlock(rumble_mutex);
+}
+
+static void rumble_update() {
+  if (!rumble.set_rumble_state) {
+    return;
+  }
+
+  mutex_lock(rumble_mutex);
+  for (int port = 0; port < RUMBLE_PORTS; port++) {
+    uint16_t strength = 0;
+    if (rumble_state[port].frames > 0) {
+      strength = rumble_state[port].strength;
+      rumble_state[port].frames--;
+    }
+
+    if (strength != rumble_state[port].applied) {
+      rumble.set_rumble_state(port, RETRO_RUMBLE_STRONG, strength);
+      rumble.set_rumble_state(port, RETRO_RUMBLE_WEAK, strength);
+      rumble_state[port].applied = strength;
+    }
+  }
+  mutex_unlock(rumble_mutex);
+}
+
+static void rumble_stop() {
+  mutex_lock(rumble_mutex);
+  for (int port = 0; port < RUMBLE_PORTS; port++) {
+    rumble_state[port].frames = 0;
+  }
+  mutex_unlock(rumble_mutex);
+  rumble_update();
+}
+
+/*
  * internal
  */
 static void video_context_destroyed() {
@@ -470,6 +526,10 @@ static int host_init(struct host *host) {
   /* let retroarch know about our controller mappings */
   env_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, controller_desc);
 
+  if (!env_cb(RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE, &rumble)) {
+    memset(&rumble, 0, sizeof(rumble));
+  }
+
   /* ask for gles 3.0 */
   hw_render.context_type = RETRO_HW_CONTEXT_OPENGLES3;
   hw_render.version_major = 3;
@@ -491,6 +551,7 @@ static int host_init(struct host *host) {
 }
 
 static void host_destroy(struct host *host) {
+  rumble_stop();
   free(host);
 }
 
@@ -505,6 +566,9 @@ struct host *host_create() {
 void retro_init() {
   if (!audio_mutex) {
     audio_mutex = mutex_create();
+  }
+  if (!rumble_mutex) {
+    rumble_mutex = mutex_create();
   }
 
   ftrace_init();
@@ -802,6 +866,7 @@ void retro_run() {
 
   FZ_B(z_input);
   input_poll(g_host);
+  rumble_update();
   FZ_E(z_input);
   FZ_B(z_audio_flush);
   audio_flush();

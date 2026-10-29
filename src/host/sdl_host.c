@@ -656,6 +656,9 @@ const char *input_controller_name(struct host *host, int port) {
   return SDL_GameControllerName(ctrl);
 }
 
+/* the bundled sdl 2.0.5 predates SDL_GameControllerRumble */
+void input_vibrate(struct host *host, int port, float power, int duration_ms) {}
+
 /*
  * ui
  */

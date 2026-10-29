@@ -685,6 +685,12 @@ static void emu_push_audio(void *userdata, const int16_t *data, int frames) {
   FZ_E(z_audio_push);
 }
 
+static void emu_vibrate(void *userdata, int port, float power,
+                        int duration_ms) {
+  struct emu *emu = userdata;
+  input_vibrate(emu->host, port, power, duration_ms);
+}
+
 /*
  * options
  */
@@ -1345,6 +1351,7 @@ struct emu *emu_create(struct host *host) {
   emu->dc->finish_render = &emu_finish_render;
   emu->dc->vblank_in = &emu_vblank_in;
   emu->dc->vblank_out = &emu_vblank_out;
+  emu->dc->vibrate = &emu_vibrate;
 
   /* add all textures to free list by default */
   for (int i = 0; i < ARRAY_SIZE(emu->textures); i++) {

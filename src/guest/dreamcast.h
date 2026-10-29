@@ -123,6 +123,7 @@ typedef void (*start_render_cb)(void *, struct ta_context *);
 typedef void (*finish_render_cb)(void *);
 typedef void (*vblank_in_cb)(void *, int);
 typedef void (*vblank_out_cb)(void *);
+typedef void (*vibrate_cb)(void *, int, float, int);
 
 struct dreamcast {
   int running;
@@ -155,6 +156,7 @@ struct dreamcast {
   finish_render_cb finish_render;
   vblank_in_cb vblank_in;
   vblank_out_cb vblank_out;
+  vibrate_cb vibrate;
 };
 
 struct dreamcast *dc_create();
@@ -188,5 +190,6 @@ void dc_start_render(struct dreamcast *dc, struct ta_context *ctx);
 void dc_finish_render(struct dreamcast *dc);
 void dc_vblank_in(struct dreamcast *dc, int video_disabled);
 void dc_vblank_out(struct dreamcast *dc);
+void dc_vibrate(struct dreamcast *dc, int port, float power, int duration_ms);
 
 #endif

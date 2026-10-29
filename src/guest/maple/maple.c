@@ -33,6 +33,8 @@ static void maple_register_dev(struct maple *mp, const char *device_type,
     *dev = controller_create(mp, port);
   } else if (!strcmp(device_type, "vmu")) {
     *dev = vmu_create(mp, port);
+  } else if (!strcmp(device_type, "purupuru")) {
+    *dev = purupuru_create(mp, port);
   } else {
     LOG_WARNING("maple_register_dev unsupported device_type=%s", device_type);
   }
@@ -75,6 +77,10 @@ void maple_handle_input(struct maple *mp, int port, int button, int16_t value) {
   if (dev && dev->input) {
     dev->input(dev, button, value);
   }
+}
+
+void maple_vibrate(struct maple *mp, int port, float power, int duration_ms) {
+  dc_vibrate(mp->dc, port, power, duration_ms);
 }
 
 struct maple_device *maple_get_device(struct maple *mp, int port, int unit) {
@@ -129,10 +135,11 @@ struct maple *maple_create(struct dreamcast *dc) {
   struct maple *mp =
       dc_create_device(dc, sizeof(struct maple), "maple", &maple_init, NULL);
 
-  /* register a controller and vmu for all ports by default */
+  /* register a controller, vmu and puru puru pack for all ports by default */
   for (int i = 0; i < MAPLE_NUM_PORTS; i++) {
     maple_register_dev(mp, "controller", i, 5);
     maple_register_dev(mp, "vmu", i, 0);
+    maple_register_dev(mp, "purupuru", i, 1);
   }
 
   ((struct device *)mp)->save_state = &maple_save_state;
