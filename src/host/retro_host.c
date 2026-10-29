@@ -122,6 +122,7 @@ static struct retro_variable g_opts[] = {
     {"nodosumi_broadcast", "Broadcast; ntsc|pal|pal_m|pal_n"},
     {"nodosumi_bios", "Boot to BIOS; disabled|enabled"},
     {"nodosumi_aspect", "Aspect ratio; 4:3|16:9|stretch"},
+    {"nodosumi_fast_depth", "Fast depth (some z-fighting); disabled|enabled"},
     {"nodosumi_stats", "Statistics logging; disabled|enabled"},
     {NULL, NULL},
 };
@@ -676,6 +677,9 @@ bool retro_load_game(const struct retro_game_info *info) {
 
   const char *bios = get_variable("nodosumi_bios");
   OPTION_bios = (bios && strcmp(bios, "enabled") == 0);
+
+  const char *fast_depth = get_variable("nodosumi_fast_depth");
+  OPTION_fast_depth = (fast_depth && strcmp(fast_depth, "enabled") == 0);
 
   const char *stats = get_variable("nodosumi_stats");
   /* only turns logging on, so NODOSUMI_STATS still works */

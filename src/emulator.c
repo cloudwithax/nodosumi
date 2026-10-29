@@ -113,16 +113,23 @@ struct emu {
   /* latest video state pushed by the dreamcast */
   volatile int vid_disabled;
   volatile int vid_source;
-  /* double buffered so the last frame can render while the cpu runs the next */
-  struct tr_context vid_rc[2];
+  /* the conv thread converts into one that's neither the latest converted
+     nor the one the video thread draws next, so the last frame can render
+     while the next converts */
+  struct tr_context vid_rc[3];
   int vid_pending;
+  int vid_draw;
   int vid_src;
   int vid_off;
   struct emu_framebuffer vid_fb;
 
   /* latest context submitted to emu_start_render */
   struct ta_context *pending_ctx;
-  /* video thread is converting without res_mutex */
+  /* converts the pending context as soon as it's submitted, unless it's a
+     render target, which needs gl and is left to the video thread */
+  thread_t conv_thread;
+  int conv_quit;
+  /* the conv or video thread is converting without res_mutex */
   int converting;
   /* set when the video thread won't take another context until this frame
      ends, so the emu thread shouldn't wait on one */
@@ -524,7 +531,7 @@ static void emu_vblank_in(void *userdata, int vid_disabled) {
   emu->vid_disabled = vid_disabled;
 
   if (emu->multi_threaded) {
-    cond_signal(emu->res_cond);
+    cond_broadcast(emu->res_cond);
     mutex_unlock(emu->res_mutex);
   }
 }
@@ -539,7 +546,7 @@ static void emu_vblank_out(void *userdata) {
   emu->state = EMU_ENDFRAME;
 
   if (emu->multi_threaded) {
-    cond_signal(emu->res_cond);
+    cond_broadcast(emu->res_cond);
     mutex_unlock(emu->res_mutex);
   }
 }
@@ -578,7 +585,7 @@ static void emu_finish_render(void *userdata) {
       g_stat_skip++;
     }
     emu->pending_ctx = NULL;
-    cond_signal(emu->res_cond);
+    cond_broadcast(emu->res_cond);
 
     mutex_unlock(emu->res_mutex);
   }
@@ -619,7 +626,7 @@ static void emu_start_render(void *userdata, struct ta_context *ctx) {
 
     emu_evict_textures(emu);
     emu->pending_ctx = ctx;
-    cond_signal(emu->res_cond);
+    cond_broadcast(emu->res_cond);
 
     mutex_unlock(emu->res_mutex);
   } else {
@@ -748,7 +755,8 @@ static void emu_start_frame(struct emu *emu) {
 }
 
 /* res_mutex is held. in mt mode drop it while converting so the emu thread
-   isn't stuck at vblank; start/finish_render both wait on converting */
+   isn't stuck at vblank; start/finish_render both wait on converting. only
+   the video thread may convert a render target */
 static void emu_convert_pending(struct emu *emu) {
   struct ta_context *ctx = emu->pending_ctx;
 
@@ -757,6 +765,11 @@ static void emu_convert_pending(struct emu *emu) {
   }
 
   emu->pending_ctx = NULL;
+
+  int conv_idx = 0;
+  while (conv_idx == emu->vid_pending || conv_idx == emu->vid_draw) {
+    conv_idx++;
+  }
 
   if (emu->multi_threaded) {
     emu->converting = 1;
@@ -768,7 +781,6 @@ static void emu_convert_pending(struct emu *emu) {
   }
   emu->num_evicted = 0;
 
-  int conv_idx = (emu->vid_pending >= 0) ? (1 - emu->vid_pending) : 0;
   int64_t c0 = g_stats_enabled ? time_nanoseconds() : 0;
   tr_convert_context(emu->r, emu, &emu_find_target, ctx,
                      &emu->vid_rc[conv_idx]);
@@ -786,12 +798,37 @@ static void emu_convert_pending(struct emu *emu) {
   if (emu->multi_threaded) {
     mutex_lock(emu->res_mutex);
     emu->converting = 0;
-    cond_signal(emu->res_cond);
+    cond_broadcast(emu->res_cond);
   }
 
   if (!rtt) {
     emu->vid_source = EMU_SOURCE_CTX;
     emu->vid_pending = conv_idx;
+  }
+}
+
+static void *emu_conv_thread(void *data) {
+  struct emu *emu = data;
+
+  mutex_lock(emu->res_mutex);
+  while (!emu->conv_quit) {
+    struct ta_context *ctx = emu->pending_ctx;
+    if (ctx && !ctx->rtt && !emu->converting && !emu->no_take && emu->r) {
+      emu_convert_pending(emu);
+    } else {
+      cond_wait(emu->res_cond, emu->res_mutex);
+    }
+  }
+  mutex_unlock(emu->res_mutex);
+
+  return NULL;
+}
+
+/* video thread converts a pending render target, the conv thread does the
+   rest */
+static void emu_convert_target(struct emu *emu) {
+  if (emu->pending_ctx && emu->pending_ctx->rtt && !emu->converting) {
+    emu_convert_pending(emu);
   }
 }
 
@@ -802,7 +839,10 @@ void emu_sync(struct emu *emu) {
     mutex_lock(emu->res_mutex);
     int no_take = emu->no_take;
     emu->no_take = 1;
-    cond_signal(emu->res_cond);
+    cond_broadcast(emu->res_cond);
+    while (emu->converting) {
+      cond_wait(emu->res_cond, emu->res_mutex);
+    }
     mutex_unlock(emu->res_mutex);
 
     /* lock free isn't enough, a just-started frame may not be taken yet */
@@ -814,6 +854,7 @@ void emu_sync(struct emu *emu) {
 
     mutex_lock(emu->res_mutex);
     emu->no_take = no_take;
+    cond_broadcast(emu->res_cond);
     mutex_unlock(emu->res_mutex);
   }
 }
@@ -871,7 +912,7 @@ int emu_begin_frame(struct emu *emu) {
   /* grab the last frame */
   int psrc = emu->vid_src;
   int pdis = emu->vid_off;
-  int pidx = emu->vid_pending;
+  int pidx = emu->vid_draw;
   emu->vid_src = EMU_SOURCE_NONE;
 
   /* games can go many vblanks without a new image. keep the last one
@@ -903,10 +944,10 @@ int emu_begin_frame(struct emu *emu) {
   if (!emu->started) {
     emu_start_frame(emu);
   } else if (emu->multi_threaded) {
-    /* take a context the running frame submitted, so it doesn't block at
-       end of render */
+    /* take a render target the running frame submitted, so it doesn't block
+       at end of render */
     mutex_lock(emu->res_mutex);
-    emu_convert_pending(emu);
+    emu_convert_target(emu);
     mutex_unlock(emu->res_mutex);
   }
 
@@ -934,15 +975,16 @@ void emu_end_frame(struct emu *emu) {
     emu_run_until_vblank(emu);
   }
 
-  /* take contexts submitted up to vblank_out. the emu thread waits in
-     emu_finish_render for each one, so don't stop at vblank_in and block on
-     req_mutex while one from vblank is still waiting. anything after
-     vblank_out is dropped */
+  /* wait for the contexts submitted up to vblank_out to be converted. the emu
+     thread waits in emu_finish_render for each one, so don't stop at vblank_in
+     and block on req_mutex while a render target from vblank is still
+     waiting. anything after vblank_out is dropped */
   if (emu->multi_threaded) {
     mutex_lock(emu->res_mutex);
 
-    while (emu->state == EMU_RUNFRAME || emu->state == EMU_DRAWFRAME) {
-      if (emu->pending_ctx) {
+    while (emu->state == EMU_RUNFRAME || emu->state == EMU_DRAWFRAME ||
+           emu->converting || emu->pending_ctx) {
+      if (emu->pending_ctx && emu->pending_ctx->rtt && !emu->converting) {
         emu_convert_pending(emu);
       } else {
         cond_wait(emu->res_cond, emu->res_mutex);
@@ -950,11 +992,13 @@ void emu_end_frame(struct emu *emu) {
     }
   }
 
-  emu_convert_pending(emu);
-
   if (emu->multi_threaded) {
     emu->no_take = 1;
+    emu->vid_draw = emu->vid_pending;
     mutex_unlock(emu->res_mutex);
+  } else {
+    emu_convert_pending(emu);
+    emu->vid_draw = emu->vid_pending;
   }
 
   /* what to render next call */
@@ -1130,19 +1174,31 @@ int emu_load_state(struct emu *emu, const void *data, size_t size) {
 }
 
 void emu_vid_destroyed(struct emu *emu) {
+  struct render_backend *r = emu->r;
+
+  /* stop the conv thread using it */
+  if (emu->multi_threaded) {
+    mutex_lock(emu->res_mutex);
+    while (emu->converting) {
+      cond_wait(emu->res_cond, emu->res_mutex);
+    }
+    emu->r = NULL;
+    mutex_unlock(emu->res_mutex);
+  }
+
   rb_for_each_entry_safe(tex, &emu->live_textures, struct emu_texture,
                          live_it) {
-    r_destroy_texture(emu->r, tex->handle);
+    r_destroy_texture(r, tex->handle);
     emu_free_texture(emu, tex);
   }
 
   for (int i = 0; i < emu->num_evicted; i++) {
-    r_destroy_texture(emu->r, emu->evicted[i]);
+    r_destroy_texture(r, emu->evicted[i]);
   }
   emu->num_evicted = 0;
 
   for (int i = 0; i < ARRAY_SIZE(emu->targets); i++) {
-    r_destroy_texture(emu->r, emu->targets[i].tex.handle);
+    r_destroy_texture(r, emu->targets[i].tex.handle);
   }
   memset(emu->targets, 0, sizeof(emu->targets));
 
@@ -1150,7 +1206,14 @@ void emu_vid_destroyed(struct emu *emu) {
 }
 
 void emu_vid_created(struct emu *emu, struct render_backend *r) {
-  emu->r = r;
+  if (emu->multi_threaded) {
+    mutex_lock(emu->res_mutex);
+    emu->r = r;
+    cond_broadcast(emu->res_cond);
+    mutex_unlock(emu->res_mutex);
+  } else {
+    emu->r = r;
+  }
 }
 
 void emu_destroy(struct emu *emu) {
@@ -1165,6 +1228,12 @@ void emu_destroy(struct emu *emu) {
 
     void *result;
     thread_join(emu->run_thread, &result);
+
+    mutex_lock(emu->res_mutex);
+    emu->conv_quit = 1;
+    cond_broadcast(emu->res_cond);
+    mutex_unlock(emu->res_mutex);
+    thread_join(emu->conv_thread, &result);
 
     mutex_destroy(emu->req_mutex);
     cond_destroy(emu->req_cond);
@@ -1183,6 +1252,7 @@ struct emu *emu_create(struct host *host) {
 
   emu->host = host;
   emu->vid_pending = -1;
+  emu->vid_draw = -1;
 
   /* create dreamcast, bind client callbacks */
   emu->dc = dc_create();
@@ -1212,6 +1282,9 @@ struct emu *emu_create(struct host *host) {
 
     emu->run_thread = thread_create(&emu_run_thread, NULL, emu);
     CHECK_NOTNULL(emu->run_thread);
+
+    emu->conv_thread = thread_create(&emu_conv_thread, NULL, emu);
+    CHECK_NOTNULL(emu->conv_thread);
   }
 
   /* set initial aspect ratio */

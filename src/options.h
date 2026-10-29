@@ -63,6 +63,9 @@ DECLARE_OPTION_INT(deadzone_3);
 /* emulator */
 DECLARE_OPTION_STRING(aspect);
 
+/* render */
+DECLARE_OPTION_INT(fast_depth);
+
 /* bios */
 DECLARE_OPTION_STRING(region);
 DECLARE_OPTION_STRING(language);

@@ -105,6 +105,12 @@ void cond_signal(cond_t cond) {
   WakeConditionVariable(wcond);
 }
 
+void cond_broadcast(cond_t cond) {
+  CONDITION_VARIABLE *wcond = (CONDITION_VARIABLE *)cond;
+
+  WakeAllConditionVariable(wcond);
+}
+
 void cond_destroy(cond_t cond) {
   CONDITION_VARIABLE *wcond = (CONDITION_VARIABLE *)cond;
 

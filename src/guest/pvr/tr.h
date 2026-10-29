@@ -65,9 +65,7 @@ struct tr_context {
   struct ta_surface surfs[TR_MAX_SURFS];
   int num_surfs;
 
-  /* the vertices are written straight into this render backend buffer. verts
-     is a copy of them for the tracer, only filled in when track_params is set */
-  int vert_buffer;
+  /* uploaded when the context is drawn, so the convert needs no gl */
   struct ta_vertex verts[TR_MAX_SURFS];
   int num_verts;
 

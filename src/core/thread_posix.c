@@ -114,6 +114,13 @@ void cond_signal(cond_t cond) {
   CHECK_EQ(res, 0);
 }
 
+void cond_broadcast(cond_t cond) {
+  pthread_cond_t *pcond = (pthread_cond_t *)cond;
+
+  int res = pthread_cond_broadcast(pcond);
+  CHECK_EQ(res, 0);
+}
+
 void cond_destroy(cond_t cond) {
   pthread_cond_t *pcond = (pthread_cond_t *)cond;
 

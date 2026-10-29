@@ -3,6 +3,7 @@
 #include "host/host.h"
 #include "render/render_backend.h"
 #include "core/thread.h"
+#include "options.h"
 #if !PLATFORM_WINDOWS
 #include <dlfcn.h>
 #endif
@@ -58,6 +59,9 @@ struct shader_prog {
 };
 
 struct texture {
+  /* set once the handle is claimed, which r_create_texture_async does off the
+     gl thread, so texture stays 0 until the upload */
+  int used;
   GLuint texture;
   /* min filter for after r_make_mipmaps, 0 if none pending */
   GLenum mip_filter;
@@ -68,6 +72,14 @@ struct viewport {
 };
 
 #define TA_NUM_VBOS 3
+
+struct texture_upload {
+  texture_handle_t handle;
+  enum filter_mode filter;
+  enum wrap_mode wrap_u, wrap_v;
+  int mipmaps, width, height;
+  uint8_t *buffer;
+};
 
 struct render_backend {
   struct host *host;
@@ -122,9 +134,16 @@ struct render_backend {
   /* texture cache */
   struct texture textures[MAX_TEXTURES];
   /* destroyed during a convert, but an earlier context may still draw them.
-     only r_delete_dead_textures actually deletes */
-  texture_handle_t dead_textures[MAX_TEXTURES];
+     only r_delete_dead_textures actually deletes. the convert can run on
+     another thread, so these and the uploads it queues are under tmutex, and
+     double buffered for the gl thread to swap out and work on unlocked */
+  mutex_t tmutex;
+  texture_handle_t dead_textures[2][MAX_TEXTURES];
   int num_dead_textures;
+  int dead_buf;
+  struct texture_upload uploads[2][MAX_TEXTURES];
+  int num_uploads;
+  int upload_buf;
   /* waiting on mipmaps, oldest first. the driver builds them on the cpu and a
      scene can bring dozens at once, so do a few each frame. until then the top
      level is used */
@@ -133,8 +152,8 @@ struct render_backend {
 
   /* surface render state */
   GLuint ta_vao;
-  /* tr_convert_context writes into the next one. the last converted frame is
-     only drawn after the next convert, so these rotate, not orphan */
+  /* each context drawn writes its vertices into the next one, so these rotate,
+     not orphan */
   GLuint ta_vbos[TA_NUM_VBOS];
   int ta_vbo_sizes[TA_NUM_VBOS];
   int ta_next_vbo;
@@ -168,8 +187,16 @@ struct render_backend {
   int ta_shadow;
 };
 
+
 #include "render/ta.glsl"
 #include "render/ui.glsl"
+
+static void r_upload_texture(struct render_backend *r, texture_handle_t handle,
+                             enum pxl_format format, enum filter_mode filter,
+                             enum wrap_mode wrap_u, enum wrap_mode wrap_v,
+                             int mipmaps, int width, int height,
+                             const uint8_t *buffer);
+static void r_upload_textures(struct render_backend *r);
 
 static GLenum filter_funcs[] = {
     GL_NEAREST,               /* FILTER_NEAREST */
@@ -443,9 +470,17 @@ static void r_destroy_textures(struct render_backend *r) {
 
     glDeleteTextures(1, &tex->texture);
   }
+
+  for (int i = 0; i < r->num_uploads; i++) {
+    free(r->uploads[r->upload_buf][i].buffer);
+  }
+
+  mutex_destroy(r->tmutex);
 }
 
 static void r_create_textures(struct render_backend *r) {
+  r->tmutex = mutex_create();
+
   /* create default all white texture */
   uint8_t pixels[64 * 64 * 4];
   memset(pixels, 0xff, sizeof(pixels));
@@ -590,11 +625,13 @@ static void r_set_initial_state(struct render_backend *r) {
 static int r_build_prog(struct render_backend *r,
                                 struct shader_prog *program, int idx) {
   char header[1024];
+  const char *depth = OPTION_fast_depth ? "#define FAST_DEPTH\n" : "";
 
   if (idx == ATTR_COUNT) {
-    snprintf(header, sizeof(header), "#define UBER\n");
+    snprintf(header, sizeof(header), "#define UBER\n%s", depth);
   } else {
     snprintf(header, sizeof(header),
+             "%s"
              "#define SHADE %d\n"
              "#define TEXTURE %s\n"
              "#define IGNORE_ALPHA %s\n"
@@ -602,7 +639,7 @@ static int r_build_prog(struct render_backend *r,
              "#define OFFSET_COLOR %s\n"
              "#define ALPHA_TEST %s\n"
              "%s",
-             idx & ATTR_SHADE_MASK, (idx & ATTR_TEXTURE) ? "true" : "false",
+             depth, idx & ATTR_SHADE_MASK, (idx & ATTR_TEXTURE) ? "true" : "false",
              (idx & ATTR_IGNORE_ALPHA) ? "true" : "false",
              (idx & ATTR_IGNORE_TEXTURE_ALPHA) ? "true" : "false",
              (idx & ATTR_OFFSET_COLOR) ? "true" : "false",
@@ -614,7 +651,8 @@ static int r_build_prog(struct render_backend *r,
   return r_compile_program(r, program, header, ta_vp, ta_fp);
 }
 
-/* the driver and the shader source both decide what a binary holds */
+/* the driver, the shader source and the defines r_build_prog adds for all
+   variants decide what a binary holds */
 static void r_cache_key(char *key, size_t size) {
   const char *sources[] = {ta_vp, ta_fp};
   uint32_t hash = 2166136261u;
@@ -626,9 +664,9 @@ static void r_cache_key(char *key, size_t size) {
     }
   }
 
-  snprintf(key, size, "nodosumi programs 1|%s|%s|%08x",
+  snprintf(key, size, "nodosumi programs 1|%s|%s|%08x|%d",
            (const char *)glGetString(GL_RENDERER),
-           (const char *)glGetString(GL_VERSION), hash);
+           (const char *)glGetString(GL_VERSION), hash, OPTION_fast_depth);
 }
 
 static void r_save_prog(struct render_backend *r, GLuint prog, int idx) {
@@ -1254,38 +1292,13 @@ void r_draw_ta_surface(struct render_backend *r,
                                          sizeof(uint16_t) * surf->first_vert));
 }
 
-struct ta_vertex *r_map_ta_vertices(struct render_backend *r, int max_verts,
-                                    int *vert_buffer) {
-  int i = r->ta_next_vbo;
-  int size = sizeof(struct ta_vertex) * max_verts;
-  r->ta_next_vbo = (i + 1) % TA_NUM_VBOS;
-
-  glBindBuffer(GL_COPY_WRITE_BUFFER, r->ta_vbos[i]);
-  if (size > r->ta_vbo_sizes[i]) {
-    r->ta_vbo_sizes[i] = size;
-    glBufferData(GL_COPY_WRITE_BUFFER, size, NULL, GL_STREAM_DRAW);
-  }
-
-  /* the buffer was last drawn from TA_NUM_VBOS frames ago, so the gpu is
-     normally done with it and invalidating it doesn't cost new storage */
-  *vert_buffer = i;
-  return glMapBufferRange(GL_COPY_WRITE_BUFFER, 0, size,
-                          GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT |
-                              GL_MAP_FLUSH_EXPLICIT_BIT);
-}
-
-void r_unmap_ta_vertices(struct render_backend *r, int vert_buffer,
-                         int num_verts) {
-  glBindBuffer(GL_COPY_WRITE_BUFFER, r->ta_vbos[vert_buffer]);
-  glFlushMappedBufferRange(GL_COPY_WRITE_BUFFER, 0,
-                           sizeof(struct ta_vertex) * num_verts);
-  glUnmapBuffer(GL_COPY_WRITE_BUFFER);
-}
-
 void r_begin_ta_surfaces(struct render_backend *r, int video_width,
-                         int video_height, int vert_buffer,
-                         const uint16_t *indices, int num_indices,
-                         int shadows) {
+                         int video_height, const struct ta_vertex *verts,
+                         int num_verts, const uint16_t *indices,
+                         int num_indices, int shadows) {
+  /* textures a convert on another thread made since the last call */
+  r_upload_textures(r);
+
   /* uniforms will be lazily bound for each program inside of r_draw_surface */
   r->uniform_token++;
   r->uniform_video_scale[0] = 2.0f / (float)video_width;
@@ -1319,7 +1332,23 @@ void r_begin_ta_surfaces(struct render_backend *r, int video_width,
 
   glBindVertexArray(r->ta_vao);
 
-  glBindBuffer(GL_ARRAY_BUFFER, r->ta_vbos[vert_buffer]);
+  /* the buffer was last drawn from TA_NUM_VBOS contexts ago, so the gpu is
+     normally done with it and invalidating it doesn't cost new storage */
+  int vbo = r->ta_next_vbo;
+  int size = sizeof(struct ta_vertex) * num_verts;
+  r->ta_next_vbo = (vbo + 1) % TA_NUM_VBOS;
+  glBindBuffer(GL_ARRAY_BUFFER, r->ta_vbos[vbo]);
+  if (size > r->ta_vbo_sizes[vbo]) {
+    r->ta_vbo_sizes[vbo] = size;
+    glBufferData(GL_ARRAY_BUFFER, size, NULL, GL_STREAM_DRAW);
+  }
+  if (size) {
+    void *dst = glMapBufferRange(
+        GL_ARRAY_BUFFER, 0, size,
+        GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
+    memcpy(dst, verts, size);
+    glUnmapBuffer(GL_ARRAY_BUFFER);
+  }
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(struct ta_vertex),
                         (void *)offsetof(struct ta_vertex, xyz));
   glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(struct ta_vertex),
@@ -1377,18 +1406,58 @@ void r_destroy_texture(struct render_backend *r, texture_handle_t handle) {
     return;
   }
 
-  r->dead_textures[r->num_dead_textures++] = handle;
+  mutex_lock(r->tmutex);
+  r->dead_textures[r->dead_buf][r->num_dead_textures++] = handle;
+  mutex_unlock(r->tmutex);
+}
+
+static void r_do_uploads(struct render_backend *r, struct texture_upload *ups,
+                         int n) {
+  for (int i = 0; i < n; i++) {
+    struct texture_upload *up = &ups[i];
+    r_upload_texture(r, up->handle, PXL_RGBA, up->filter, up->wrap_u,
+                     up->wrap_v, up->mipmaps, up->width, up->height,
+                     up->buffer);
+    free(up->buffer);
+  }
+}
+
+static void r_upload_textures(struct render_backend *r) {
+  mutex_lock(r->tmutex);
+  int buf = r->upload_buf;
+  int n = r->num_uploads;
+  r->upload_buf ^= 1;
+  r->num_uploads = 0;
+  mutex_unlock(r->tmutex);
+
+  r_do_uploads(r, r->uploads[buf], n);
 }
 
 void r_delete_dead_textures(struct render_backend *r) {
-  for (int i = 0; i < r->num_dead_textures; i++) {
-    struct texture *tex = &r->textures[r->dead_textures[i]];
+  /* swap both out at once, so the upload of any handle in the dead list is
+     done before the handle is freed for reuse */
+  mutex_lock(r->tmutex);
+  int ubuf = r->upload_buf;
+  int nup = r->num_uploads;
+  r->upload_buf ^= 1;
+  r->num_uploads = 0;
+  int dbuf = r->dead_buf;
+  int ndead = r->num_dead_textures;
+  r->dead_buf ^= 1;
+  r->num_dead_textures = 0;
+  mutex_unlock(r->tmutex);
+
+  r_do_uploads(r, r->uploads[ubuf], nup);
+
+  texture_handle_t *dead = r->dead_textures[dbuf];
+  for (int i = 0; i < ndead; i++) {
+    struct texture *tex = &r->textures[dead[i]];
 
     /* stop waiting for its mipmaps, or the next texture given the handle
        would get them */
     if (tex->mip_filter) {
       int j = 0;
-      while (r->mip_textures[j] != r->dead_textures[i]) {
+      while (r->mip_textures[j] != dead[i]) {
         j++;
       }
       r->num_mip_textures--;
@@ -1399,8 +1468,8 @@ void r_delete_dead_textures(struct render_backend *r) {
 
     glDeleteTextures(1, &tex->texture);
     tex->texture = 0;
+    __atomic_store_n(&tex->used, 0, __ATOMIC_RELEASE);
   }
-  r->num_dead_textures = 0;
 }
 
 void r_make_mipmaps(struct render_backend *r) {
@@ -1458,10 +1527,48 @@ void r_end_target(struct render_backend *r) {
 
   glBindFramebuffer(GL_FRAMEBUFFER, r->target_prev_fbo);
   glViewport(r->viewport.x, r->viewport.y, r->viewport.w, r->viewport.h);
+}
 
-  /* the target was drawn from the vertices converted last, which aren't
-     drawn again, so the next context converted can have their buffer */
-  r->ta_next_vbo = (r->ta_next_vbo + TA_NUM_VBOS - 1) % TA_NUM_VBOS;
+/* find and claim the next open texture entry */
+static texture_handle_t r_reserve_texture(struct render_backend *r) {
+  texture_handle_t handle;
+  for (handle = 1; handle < MAX_TEXTURES; handle++) {
+    int unused = 0;
+    if (!__atomic_load_n(&r->textures[handle].used, __ATOMIC_RELAXED) &&
+        __atomic_compare_exchange_n(&r->textures[handle].used, &unused, 1, 0,
+                                    __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+      break;
+    }
+  }
+  CHECK_LT(handle, MAX_TEXTURES);
+  return handle;
+}
+
+texture_handle_t r_create_texture_async(struct render_backend *r,
+                                        enum filter_mode filter,
+                                        enum wrap_mode wrap_u,
+                                        enum wrap_mode wrap_v, int mipmaps,
+                                        int width, int height,
+                                        const uint8_t *buffer) {
+  texture_handle_t handle = r_reserve_texture(r);
+
+  int size = width * height * 4;
+  uint8_t *copy = malloc(size);
+  memcpy(copy, buffer, size);
+
+  mutex_lock(r->tmutex);
+  struct texture_upload *up = &r->uploads[r->upload_buf][r->num_uploads++];
+  up->handle = handle;
+  up->filter = filter;
+  up->wrap_u = wrap_u;
+  up->wrap_v = wrap_v;
+  up->mipmaps = mipmaps;
+  up->width = width;
+  up->height = height;
+  up->buffer = copy;
+  mutex_unlock(r->tmutex);
+
+  return handle;
 }
 
 texture_handle_t r_create_texture(struct render_backend *r,
@@ -1470,16 +1577,17 @@ texture_handle_t r_create_texture(struct render_backend *r,
                                   enum wrap_mode wrap_u, enum wrap_mode wrap_v,
                                   int mipmaps, int width, int height,
                                   const uint8_t *buffer) {
-  /* find next open texture entry */
-  texture_handle_t handle;
-  for (handle = 1; handle < MAX_TEXTURES; handle++) {
-    struct texture *tex = &r->textures[handle];
-    if (!tex->texture) {
-      break;
-    }
-  }
-  CHECK_LT(handle, MAX_TEXTURES);
+  texture_handle_t handle = r_reserve_texture(r);
+  r_upload_texture(r, handle, format, filter, wrap_u, wrap_v, mipmaps, width,
+                   height, buffer);
+  return handle;
+}
 
+static void r_upload_texture(struct render_backend *r, texture_handle_t handle,
+                             enum pxl_format format, enum filter_mode filter,
+                             enum wrap_mode wrap_u, enum wrap_mode wrap_v,
+                             int mipmaps, int width, int height,
+                             const uint8_t *buffer) {
   GLuint internal_fmt = internal_formats[format];
   GLuint pixel_fmt = pixel_formats[format];
 
@@ -1500,8 +1608,6 @@ texture_handle_t r_create_texture(struct render_backend *r,
   }
 
   glBindTexture(GL_TEXTURE_2D, 0);
-
-  return handle;
 }
 
 int r_height(struct render_backend *r) {

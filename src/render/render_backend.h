@@ -163,6 +163,16 @@ texture_handle_t r_create_texture(struct render_backend *r,
                                   enum wrap_mode wrap_u, enum wrap_mode wrap_v,
                                   int mipmaps, int width, int height,
                                   const uint8_t *buffer);
+/* callable off the gl thread: the handle is reserved now and the pixels,
+   copied, are uploaded by the next r_begin_ta_surfaces or
+   r_delete_dead_textures. only PXL_RGBA */
+texture_handle_t r_create_texture_async(struct render_backend *r,
+                                        enum filter_mode filter,
+                                        enum wrap_mode wrap_u,
+                                        enum wrap_mode wrap_v, int mipmaps,
+                                        int width, int height,
+                                        const uint8_t *buffer);
+/* callable off the gl thread */
 void r_destroy_texture(struct render_backend *r, texture_handle_t handle);
 /* a destroyed texture may still be used by a context converted before it was
    destroyed, so it's only deleted by this, called once no such context will
@@ -184,17 +194,11 @@ void r_viewport(struct render_backend *r, int x, int y, int width, int height);
 void r_draw_pixels(struct render_backend *r, const uint8_t *pixels, int x,
                    int y, int width, int height);
 
-/* the vertices for r_begin_ta_surfaces are written straight into the memory
-   this maps. it's uncached, so it must only ever be written */
-struct ta_vertex *r_map_ta_vertices(struct render_backend *r, int max_verts,
-                                    int *vert_buffer);
-void r_unmap_ta_vertices(struct render_backend *r, int vert_buffer,
-                         int num_verts);
 /* shadows is set when r_draw_ta_modvols will be called, for the surfaces drawn
    before it to be marked as they're drawn */
 void r_begin_ta_surfaces(struct render_backend *r, int video_width,
-                         int video_height, int vert_buffer,
-                         const uint16_t *indices, int num_indices,
+                         int video_height, const struct ta_vertex *verts,
+                         int num_verts, const uint16_t *indices, int num_indices,
                          int shadows);
 void r_draw_ta_surface(struct render_backend *r, const struct ta_surface *surf);
 /* darken the shadow surfaces drawn so far where the volumes cover them, by

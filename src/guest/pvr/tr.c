@@ -184,8 +184,8 @@ static texture_handle_t tr_convert_texture(struct tr *tr,
       tsp.clamp_v ? WRAP_CLAMP_TO_EDGE
                   : (tsp.flip_v ? WRAP_MIRRORED_REPEAT : WRAP_REPEAT);
 
-  entry->handle = r_create_texture(tr->r, PXL_RGBA, filter, wrap_u, wrap_v,
-                                   mipmaps, width, height, converted);
+  entry->handle = r_create_texture_async(tr->r, filter, wrap_u, wrap_v,
+                                         mipmaps, width, height, converted);
   entry->filter = filter;
   entry->wrap_u = wrap_u;
   entry->wrap_v = wrap_v;
@@ -275,10 +275,6 @@ static void tr_commit_surf(struct tr *tr, struct tr_context *rc) {
 
   memcpy(&tr->verts[rc->num_verts], surf_verts,
          sizeof(struct ta_vertex) * new_surf->num_verts);
-  if (rc->track_params) {
-    memcpy(&rc->verts[rc->num_verts], surf_verts,
-           sizeof(struct ta_vertex) * new_surf->num_verts);
-  }
 
   int num_drawn = 0;
   for (int i = 0; i < new_surf->num_verts - 2; i++) {
@@ -1086,8 +1082,8 @@ void tr_render_context_until(struct render_backend *r,
                              const struct tr_context *rc, int end_surf) {
   int stopped = 0;
 
-  r_begin_ta_surfaces(r, rc->width, rc->height, rc->vert_buffer, rc->indices,
-                      rc->num_indices, rc->num_modvols > 0);
+  r_begin_ta_surfaces(r, rc->width, rc->height, rc->verts, rc->num_verts,
+                      rc->indices, rc->num_indices, rc->num_modvols > 0);
 
   tr_render_list(r, rc, TA_LIST_OPAQUE, end_surf, &stopped);
   tr_render_list(r, rc, TA_LIST_PUNCH_THROUGH, end_surf, &stopped);
@@ -1118,7 +1114,7 @@ void tr_convert_context(struct render_backend *r, void *userdata,
 
   tr_reset(&tr, rc);
 
-  tr.verts = r_map_ta_vertices(r, TR_MAX_SURFS, &rc->vert_buffer);
+  tr.verts = rc->verts;
 
   rc->width = ctx->video_width;
   rc->height = ctx->video_height;
@@ -1222,6 +1218,4 @@ void tr_convert_context(struct render_backend *r, void *userdata,
       rc->num_verts += 4;
     }
   }
-
-  r_unmap_ta_vertices(r, rc->vert_buffer, rc->num_verts);
 }
