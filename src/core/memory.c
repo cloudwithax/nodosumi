@@ -102,6 +102,12 @@ struct memory_watch *add_single_write_watch(const void *ptr, size_t size,
     watcher_create();
   }
 
+#if defined(__aarch64__)
+  /* android tags heap pointers in the top byte, but fault addresses come back
+     without it. drop it so faults find their watch */
+  ptr = (const void *)((uintptr_t)ptr & 0x00ffffffffffffffull);
+#endif
+
   /* page align the range to be watched */
   size_t page_size = get_page_size();
   uintptr_t aligned_begin = ALIGN_DOWN((uintptr_t)ptr, page_size);
