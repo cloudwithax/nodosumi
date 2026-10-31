@@ -159,8 +159,11 @@ static uint32_t bios_gdrom_send_cmd(struct bios *bios, uint32_t cmd_code,
   memset(bios->result, 0, sizeof(bios->result));
 
   if (params) {
-    /* greedily copy 4 params every time and hope this doesn't blow up */
-    sh4_memcpy_to_host(dc->mem, &bios->params, params, sizeof(bios->params));
+    /* greedily copy 4 params every time, a word at a time so params at the
+       top of a region don't read past its end */
+    for (int i = 0; i < 4; i++) {
+      sh4_memcpy_to_host(dc->mem, &bios->params[i], params + i * 4, 4);
+    }
   }
 
   return bios->cmd_id;
