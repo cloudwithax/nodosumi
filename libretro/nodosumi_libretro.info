@@ -9,7 +9,7 @@ systemid = "dreamcast"
 database = "Sega - Dreamcast"
 license = "GPLv3"
 permissions = ""
-display_version = "1.1.0"
+display_version = "1.2.0"
 
 # Nodosumi expects its data files under <system>/dc
 firmware_count = 2
