@@ -8,7 +8,7 @@
 #include "core/memory.h"
 
 #if PLATFORM_ANDROID
-#include <linux/ashmem.h>
+#include <android/sharedmem.h>
 #endif
 
 #define MAX_SHMEM 128
@@ -163,22 +163,9 @@ shmem_handle_t create_shared_memory(const char *filename, size_t size,
   CHECK_NOTNULL(shmem);
 
 #if PLATFORM_ANDROID
-  int oflag = access_to_open_flags(access);
-
-  int handle = open("/" ASHMEM_NAME_DEF, oflag);
+  /* apps targeting android 10+ can't open /dev/ashmem directly */
+  int handle = ASharedMemory_create(filename, size);
   if (handle < 0) {
-    return NULL;
-  }
-
-  int ret = ioctl(handle, ASHMEM_SET_NAME, filename);
-  if (ret < 0) {
-    close(handle);
-    return NULL;
-  }
-
-  ret = ioctl(handle, ASHMEM_SET_SIZE, size);
-  if (ret < 0) {
-    close(handle);
     return NULL;
   }
 #else

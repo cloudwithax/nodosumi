@@ -35,12 +35,17 @@ Nodosumi is written in C and descends from [Redream](https://github.com/inolen/r
 | `src/jit` | Recompiler: SH-4 and ARM7 frontends → IR → optimization passes → x86-64 or AArch64 backend, with an interpreter fallback |
 | `src/render` | PowerVR2 renderer on OpenGL ES 3.0 |
 | `src/host` | Frontends: libretro (`retro_host.c`) and SDL2 (`sdl_host.c`) |
+| `android` | Android app, drives the libretro core over JNI |
 
 ## Installation
 
 1. Download the latest zip from [Releases](https://github.com/cloudwithax/nodosumi/releases)
 2. Copy `nodosumi_libretro.so` to RetroArch's `cores/` and `nodosumi_libretro.info` to `info/`
 3. Put your Dreamcast BIOS at `<system>/dc/boot.bin`
+
+### Android
+
+Needs Android 11+ on arm64. Install the APK. The setup wizard asks for all files access (the core opens games by path), a games folder, and optionally `boot.bin` and `flash.bin`.
 
 ## Building
 
@@ -63,6 +68,17 @@ cmake --build build
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
+
+### Android app
+
+Needs JDK 17 and the Android SDK with NDK 27.2.12479018 and CMake 3.22.1.
+
+```bash
+cd android
+./gradlew assembleRelease
+```
+
+The APK lands in `android/app/build/outputs/apk/release/`.
 
 ## License
 

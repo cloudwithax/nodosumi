@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- sumi ink, washi paper and the ensō's vermilion -->
+    <color name="ink">#FF141110</color>
+    <color name="washi">#FFF6F1E7</color>
+    <color name="shu">#FFE8470A</color>
+</resources>
