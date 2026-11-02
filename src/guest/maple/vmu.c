@@ -12,18 +12,90 @@
 
 struct vmu {
   struct maple_device;
+  int port;
 
   /* note, a persistent file handle isn't kept open here, writes are instead
      performed immediately to avoid corrupt saves in the event of a crash */
   char filename[PATH_MAX];
 };
 
+/* each game gets its own card, in vmu/<game>/, so one game can't fill or
+   damage another's saves. empty when no game's loaded, for the shared card */
+static char vmu_game[PATH_MAX];
+
+void vmu_set_game(const char *path) {
+  vmu_game[0] = 0;
+  if (!path || !*path) {
+    return;
+  }
+
+  /* "Title (USA).chd" -> "Title (USA)", or the folder for a generic name like
+     disc.gdi, as the android app names its games */
+  char name[PATH_MAX];
+  fs_basename(path, name, sizeof(name));
+  char *ext = strrchr(name, '.');
+  if (ext) {
+    *ext = 0;
+  }
+  if (!strcasecmp(name, "disc") || !strcasecmp(name, "game") ||
+      !strcasecmp(name, "track") || !strcasecmp(name, "image")) {
+    char dir[PATH_MAX];
+    fs_dirname(path, dir, sizeof(dir));
+    fs_basename(dir, name, sizeof(name));
+  }
+  snprintf(vmu_game, sizeof(vmu_game), "%s", name);
+}
+
+/* the card's made on first use, once the game's known */
+static const char *vmu_filename(struct vmu *vmu) {
+  const char *appdir = fs_appdir();
+  char shared[PATH_MAX];
+  snprintf(shared, sizeof(shared), "%s" PATH_SEPARATOR "vmu%d.bin", appdir,
+           vmu->port);
+
+  if (vmu_game[0]) {
+    char dir[PATH_MAX];
+    snprintf(dir, sizeof(dir), "%s" PATH_SEPARATOR "vmu", appdir);
+    fs_mkdir(dir);
+    snprintf(dir, sizeof(dir), "%s" PATH_SEPARATOR "vmu" PATH_SEPARATOR "%s",
+             appdir, vmu_game);
+    fs_mkdir(dir);
+    snprintf(vmu->filename, sizeof(vmu->filename),
+             "%s" PATH_SEPARATOR "vmu%d.bin", dir, vmu->port);
+  } else {
+    snprintf(vmu->filename, sizeof(vmu->filename), "%s", shared);
+  }
+
+  if (!fs_exists(vmu->filename)) {
+    LOG_INFO("vmu_filename initializing %s", vmu->filename);
+
+    /* a game's first card starts as a copy of the shared one, so saves made
+       before cards were per game aren't lost */
+    uint8_t data[sizeof(vmu_default)];
+    memcpy(data, vmu_default, sizeof(data));
+    FILE *src = vmu_game[0] ? fopen(shared, "rb") : NULL;
+    if (src) {
+      if (fread(data, 1, sizeof(data), src) != sizeof(data)) {
+        memcpy(data, vmu_default, sizeof(data));
+      }
+      fclose(src);
+    }
+
+    FILE *file = fopen(vmu->filename, "wb");
+    CHECK_NOTNULL(file, "failed to open %s", vmu->filename);
+    fwrite(data, 1, sizeof(data), file);
+    fclose(file);
+  }
+
+  return vmu->filename;
+}
+
 static void vmu_write_bin(struct vmu *vmu, int block, int phase,
                           const void *buffer, int num_words) {
   int offset = BLK_OFFSET(block, phase);
   int size = num_words << 2;
 
-  FILE *file = fopen(vmu->filename, "r+b");
+  FILE *file = fopen(vmu_filename(vmu), "r+b");
   CHECK_NOTNULL(file, "failed to open %s", vmu->filename);
   int r = fseek(file, offset, SEEK_SET);
   CHECK_NE(r, -1);
@@ -37,7 +109,7 @@ static void vmu_read_bin(struct vmu *vmu, int block, int phase, void *buffer,
   int offset = BLK_OFFSET(block, phase);
   int size = num_words << 2;
 
-  FILE *file = fopen(vmu->filename, "rb");
+  FILE *file = fopen(vmu_filename(vmu), "rb");
   CHECK_NOTNULL(file, "failed to open %s", vmu->filename);
   int r = fseek(file, offset, SEEK_SET);
   CHECK_NE(r, -1);
@@ -213,20 +285,7 @@ struct maple_device *vmu_create(struct maple *mp, int port) {
   vmu->type = MAPLE_DEV_VMU;
   vmu->destroy = &vmu_destroy;
   vmu->frame = &vmu_frame;
-
-  /* intialize default vmu if one doesn't exist */
-  const char *appdir = fs_appdir();
-  snprintf(vmu->filename, sizeof(vmu->filename),
-           "%s" PATH_SEPARATOR "vmu%d.bin", appdir, port);
-
-  if (!fs_exists(vmu->filename)) {
-    LOG_INFO("vmu_create initializing %s", vmu->filename);
-
-    FILE *file = fopen(vmu->filename, "wb");
-    CHECK_NOTNULL(file, "failed to open %s", vmu->filename);
-    fwrite(vmu_default, 1, sizeof(vmu_default), file);
-    fclose(file);
-  }
+  vmu->port = port;
 
   return (struct maple_device *)vmu;
 }

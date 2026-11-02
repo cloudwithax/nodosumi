@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SaveAs
 import androidx.compose.material.icons.rounded.SdStorage
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SportsEsports
@@ -93,7 +94,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(onPlay: (Game) -> Unit, onSettings: () -> Unit) {
+fun HomeScreen(onPlay: (Game) -> Unit, onSettings: () -> Unit, onVmu: () -> Unit) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -166,7 +167,7 @@ fun HomeScreen(onPlay: (Game) -> Unit, onSettings: () -> Unit) {
                 }
                 GamesTab(shown, searching = query.isNotBlank(), onPlay = onPlay)
             } else {
-                OptionsTab(onSettings)
+                OptionsTab(onSettings, onVmu)
             }
         }
     }
@@ -358,7 +359,7 @@ private fun formatSize(bytes: Long): String {
 }
 
 @Composable
-private fun OptionsTab(onSettings: () -> Unit) {
+private fun OptionsTab(onSettings: () -> Unit, onVmu: () -> Unit) {
     val context = LocalContext.current
     val pickFolder = rememberFolderPicker()
     var bios by remember { mutableStateOf(installedBios(context)) }
@@ -369,6 +370,9 @@ private fun OptionsTab(onSettings: () -> Unit) {
     LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
         item {
             OptionRow(Icons.Rounded.Settings, "Settings", "System, graphics and controls", onSettings)
+        }
+        item {
+            OptionRow(Icons.Rounded.SaveAs, "Memory cards", "Each game's saves", onVmu)
         }
         item {
             OptionRow(

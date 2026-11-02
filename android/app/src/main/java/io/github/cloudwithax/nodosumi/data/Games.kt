@@ -55,14 +55,21 @@ object Games {
             .sortedBy { it.title.lowercase() }
     }
 
+    /** The game's name before its tags are taken off, which the core also names its card by. */
+    fun cardName(path: String): String {
+        val file = File(path)
+        val name = file.nameWithoutExtension
+        return if (name.lowercase() in GENERIC_NAMES) file.parentFile?.name ?: name else name
+    }
+
+    /** "Title (USA) (Disc 1) [!]" -> Title */
+    fun titleOf(name: String) =
+        name.replace(Regex("""\s*[(\[][^)\]]*[)\]]"""), "").trim().ifEmpty { name }
+
     private fun toGame(file: File): Game {
-        var name = file.nameWithoutExtension
-        if (name.lowercase() in GENERIC_NAMES) {
-            name = file.parentFile?.name ?: name
-        }
+        val name = cardName(file.path)
         // "Title (USA) (Disc 1) [!]" -> Title, [USA, Disc 1, !]
         val tags = Regex("""[(\[]([^)\]]+)[)\]]""").findAll(name).map { it.groupValues[1] }.toList()
-        val title = name.replace(Regex("""\s*[(\[][^)\]]*[)\]]"""), "").trim().ifEmpty { name }
-        return Game(title, tags, file.path, file.extension.uppercase(), file.length())
+        return Game(titleOf(name), tags, file.path, file.extension.uppercase(), file.length())
     }
 }

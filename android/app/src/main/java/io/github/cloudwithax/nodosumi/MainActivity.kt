@@ -21,6 +21,7 @@ import io.github.cloudwithax.nodosumi.ui.HomeScreen
 import io.github.cloudwithax.nodosumi.ui.NodosumiTheme
 import io.github.cloudwithax.nodosumi.ui.SettingsScreen
 import io.github.cloudwithax.nodosumi.ui.SetupScreen
+import io.github.cloudwithax.nodosumi.ui.VmuScreen
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -45,10 +46,14 @@ class MainActivity : ComponentActivity() {
                         HomeScreen(
                             onPlay = { launch(it) },
                             onSettings = { nav.navigate("settings") },
+                            onVmu = { nav.navigate("vmu") },
                         )
                     }
                     composable("settings") {
                         SettingsScreen(onBack = { nav.popBackStack() })
+                    }
+                    composable("vmu") {
+                        VmuScreen(onBack = { nav.popBackStack() })
                     }
                 }
             }

@@ -9,6 +9,7 @@
 #include "core/version.h"
 #include "emulator.h"
 #include "guest/aica/aica.h"
+#include "guest/maple/maple.h"
 #include "host/host.h"
 #include "imgui.h"
 #include "options.h"
@@ -667,6 +668,7 @@ void ui_closed(struct host *host) {}
 void ui_opened(struct host *host) {}
 
 int ui_load_game(struct host *host, const char *path) {
+  vmu_set_game(path);
   return emu_load(host->emu, path);
 }
 
@@ -1052,6 +1054,7 @@ int main(int argc, char **argv) {
       int success = 0;
 
       if (load || OPTION_bios) {
+        vmu_set_game(load);
         success = emu_load(host->emu, load);
       }
 

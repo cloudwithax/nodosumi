@@ -12,6 +12,7 @@
 #include "core/version.h"
 #include "emulator.h"
 #include "guest/aica/aica.h"
+#include "guest/maple/maple.h"
 #include "host/host.h"
 #include "options.h"
 #include "render/render_backend.h"
@@ -1080,6 +1081,8 @@ bool retro_load_game(const struct retro_game_info *info) {
     return false;
   }
 
+  /* the card's named for the game, the playlist rather than its discs */
+  vmu_set_game(g_game);
   if (!emu_load(g_host->emu, g_discs[0])) {
     g_game[0] = '\0';
     return false;

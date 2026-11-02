@@ -91,7 +91,8 @@ class EmulationActivity : ComponentActivity() {
         private const val SLOTS = 5
 
         /** The game the core in this process was started with. */
-        private var loaded: String? = null
+        var loaded: String? = null
+            private set
     }
 
     private lateinit var path: String

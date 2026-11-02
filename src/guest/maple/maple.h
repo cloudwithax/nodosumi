@@ -40,6 +40,8 @@ void maple_vibrate(struct maple *mp, int port, float power, int duration_ms);
 
 struct maple_device *controller_create(struct maple *mp, int port);
 struct maple_device *vmu_create(struct maple *mp, int port);
+/* the game the vmus keep their card for, by its path */
+void vmu_set_game(const char *path);
 struct maple_device *purupuru_create(struct maple *mp, int port);
 
 #endif
