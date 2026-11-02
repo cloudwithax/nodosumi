@@ -104,6 +104,7 @@ DEFINE_PERSISTENT_OPTION_STRING(aspect,    "4:3",             "Video aspect rati
 
 /* render */
 DEFINE_OPTION_INT(fast_depth,              1,                 "Depth from the vertex shader, faster but with some z-fighting");
+DEFINE_OPTION_INT(rtt_scale,               1,                 "Scale render to texture targets by this, like the internal resolution");
 
 /* bios */
 DEFINE_PERSISTENT_OPTION_STRING(region,    "usa",             "System region");

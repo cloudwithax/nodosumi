@@ -68,6 +68,8 @@ fun SettingsScreen(onBack: () -> Unit) {
             item { Section("Graphics") }
             item { ChoiceSetting(Settings.ASPECT, "16:9 squeezes the picture for games with a widescreen mode") }
             item { ChoiceSetting(Settings.ACCURATE_DEPTH, "Slower, but less z-fighting in some games") }
+            item { ChoiceSetting(Settings.INTERNAL_RESOLUTION, "Draw the game larger than the console did, for sharper edges") }
+            item { ChoiceSetting(Settings.RTT_UPSCALE, "Upscale effects games draw to a texture, like reflections and transitions") }
 
             item { Section("Controls") }
             item {

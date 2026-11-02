@@ -22,6 +22,11 @@
 #define VIDEO_WIDTH 640
 #define VIDEO_HEIGHT 480
 
+/* the internal resolution, what the frontend's framebuffer is made and drawn
+   at. the guest's screen is mapped to it by the viewport, as in flycast */
+static int g_width = VIDEO_WIDTH;
+static int g_height = VIDEO_HEIGHT;
+
 static struct retro_hw_render_callback hw_render;
 static retro_environment_t env_cb;
 static retro_audio_sample_t audio_cb;
@@ -142,6 +147,10 @@ static struct retro_variable g_opts[] = {
     {"nodosumi_broadcast", "Broadcast; ntsc|pal|pal_m|pal_n"},
     {"nodosumi_bios", "Boot to BIOS; disabled|enabled"},
     {"nodosumi_aspect", "Aspect ratio; 4:3|16:9|stretch"},
+    {"nodosumi_internal_resolution",
+     "Internal resolution; 640x480|320x240|960x720|1280x960|1440x1080|"
+     "1600x1200|1920x1440|2560x1920|2880x2160|3200x2400|3840x2880"},
+    {"nodosumi_rtt_upscale", "Render to texture upscaling; 1x|2x|3x|4x"},
     {"nodosumi_accurate_depth",
      "Accurate depth (slower, less z-fighting); disabled|enabled"},
     {"nodosumi_stats", "Statistics logging; disabled|enabled"},
@@ -161,6 +170,28 @@ static void set_option(char *dst, size_t size, const char *key) {
   if (value) {
     snprintf(dst, size, "%s", value);
   }
+}
+
+/* the options that can change while a game runs, returning whether the
+   internal resolution did */
+static int read_video_options() {
+  int width = VIDEO_WIDTH;
+  int height = VIDEO_HEIGHT;
+  const char *res = get_variable("nodosumi_internal_resolution");
+  if (res && sscanf(res, "%dx%d", &width, &height) != 2) {
+    width = VIDEO_WIDTH;
+    height = VIDEO_HEIGHT;
+  }
+
+  const char *rtt = get_variable("nodosumi_rtt_upscale");
+  if (!rtt || sscanf(rtt, "%dx", &OPTION_rtt_scale) != 1) {
+    OPTION_rtt_scale = 1;
+  }
+
+  int changed = width != g_width || height != g_height;
+  g_width = width;
+  g_height = height;
+  return changed;
 }
 
 /*
@@ -515,7 +546,7 @@ static void video_context_reset() {
   }
 
   CHECK(!g_host->video.r);
-  g_host->video.r = r_create(VIDEO_WIDTH, VIDEO_HEIGHT,
+  g_host->video.r = r_create(g_width, g_height,
                              cache_path[0] ? cache_path : NULL);
 
   if (g_host->emu) {
@@ -630,10 +661,10 @@ void retro_get_system_info(struct retro_system_info *info) {
 }
 
 void retro_get_system_av_info(struct retro_system_av_info *info) {
-  info->geometry.base_width = VIDEO_WIDTH;
-  info->geometry.base_height = VIDEO_HEIGHT;
-  info->geometry.max_width = VIDEO_WIDTH;
-  info->geometry.max_height = VIDEO_HEIGHT;
+  info->geometry.base_width = g_width;
+  info->geometry.base_height = g_height;
+  info->geometry.max_width = g_width;
+  info->geometry.max_height = g_height;
   info->geometry.aspect_ratio = (float)VIDEO_WIDTH / (float)VIDEO_HEIGHT;
   info->timing.fps = 60;
   info->timing.sample_rate = AUDIO_FREQ;
@@ -842,8 +873,21 @@ static void gpu_query_end() {
 }
 
 void retro_run() {
+  /* a new resolution resizes the frontend's framebuffer, which may recreate
+     the context, and with it the render backend at the new size */
+  bool updated_vars = false;
+  if (env_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated_vars) &&
+      updated_vars && read_video_options()) {
+    struct retro_system_av_info av;
+    retro_get_system_av_info(&av);
+    env_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av);
+    if (g_host->video.r) {
+      r_resize(g_host->video.r, g_width, g_height);
+    }
+  }
+
   if (!g_gl_ok || !g_host->video.r) {
-    video_cb(NULL, VIDEO_WIDTH, VIDEO_HEIGHT, 0);
+    video_cb(NULL, g_width, g_height, 0);
     return;
   }
 
@@ -903,7 +947,7 @@ void retro_run() {
   FT_B(video_cb, updated);
   FZ_B(z_video_cb);
   video_cb(updated ? RETRO_HW_FRAME_BUFFER_VALID : NULL,
-           VIDEO_WIDTH, VIDEO_HEIGHT, 0);
+           g_width, g_height, 0);
   FZ_E(z_video_cb);
   FT_E(video_cb, updated);
 
@@ -994,6 +1038,7 @@ bool retro_load_game(const struct retro_game_info *info) {
   set_option(OPTION_language, sizeof(OPTION_language), "nodosumi_language");
   set_option(OPTION_broadcast, sizeof(OPTION_broadcast), "nodosumi_broadcast");
   set_option(OPTION_aspect, sizeof(OPTION_aspect), "nodosumi_aspect");
+  read_video_options();
 
   const char *bios = get_variable("nodosumi_bios");
   OPTION_bios = (bios && strcmp(bios, "enabled") == 0);

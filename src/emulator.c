@@ -363,11 +363,15 @@ static void emu_render_target(struct emu *emu, const struct ta_context *ctx,
   target->addr = ctx->rtt_addr;
   target->tex.width = w;
   target->tex.height = h;
-  target->tex.handle =
-      r_create_texture(emu->r, alpha ? PXL_RGBA : PXL_RGB, FILTER_BILINEAR,
-                       WRAP_REPEAT, WRAP_REPEAT, 0, w, h, NULL);
 
-  r_begin_target(emu->r, target->tex.handle, w, h);
+  /* upscaled like the screen, by drawing it larger. the context is mapped to
+     the viewport and sampled with normalized uvs, so neither need know */
+  int scale = MAX(OPTION_rtt_scale, 1);
+  target->tex.handle = r_create_texture(
+      emu->r, alpha ? PXL_RGBA : PXL_RGB, FILTER_BILINEAR, WRAP_REPEAT,
+      WRAP_REPEAT, 0, w * scale, h * scale, NULL);
+
+  r_begin_target(emu->r, target->tex.handle, w * scale, h * scale);
   tr_render_context(emu->r, rc);
   r_end_target(emu->r);
 }

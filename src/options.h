@@ -65,6 +65,7 @@ DECLARE_OPTION_STRING(aspect);
 
 /* render */
 DECLARE_OPTION_INT(fast_depth);
+DECLARE_OPTION_INT(rtt_scale);
 
 /* bios */
 DECLARE_OPTION_STRING(region);

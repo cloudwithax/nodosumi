@@ -42,7 +42,23 @@ object Settings {
         listOf("disabled", "enabled"), listOf("Off", "On"), "disabled",
     )
 
-    val CORE_OPTIONS = listOf(REGION, LANGUAGE, BROADCAST, BIOS, ASPECT, ACCURATE_DEPTH)
+    // a subset of the core's resolutions, enough to fill a 1080p screen and
+    // supersample past it
+    val INTERNAL_RESOLUTION = CoreOption(
+        "nodosumi_internal_resolution", "Internal resolution",
+        listOf("640x480", "960x720", "1280x960", "1440x1080", "1920x1440", "2560x1920"),
+        listOf("640x480 (1x)", "960x720 (1.5x)", "1280x960 (2x)", "1440x1080 (2.25x)",
+            "1920x1440 (3x)", "2560x1920 (4x)"),
+        "640x480",
+    )
+    val RTT_UPSCALE = CoreOption(
+        "nodosumi_rtt_upscale", "Render to texture upscaling",
+        listOf("1x", "2x", "3x", "4x"), listOf("1x", "2x", "3x", "4x"), "1x",
+    )
+
+    val CORE_OPTIONS = listOf(
+        REGION, LANGUAGE, BROADCAST, BIOS, ASPECT, ACCURATE_DEPTH, INTERNAL_RESOLUTION, RTT_UPSCALE,
+    )
 
     private lateinit var prefs: SharedPreferences
 

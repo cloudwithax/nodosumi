@@ -1630,6 +1630,11 @@ int r_width(struct render_backend *r) {
   return r->width;
 }
 
+void r_resize(struct render_backend *r, int width, int height) {
+  r->width = width;
+  r->height = height;
+}
+
 void r_destroy(struct render_backend *r) {
   r_destroy_vertex_arrays(r);
   r_destroy_shaders(r);

@@ -22,8 +22,6 @@
 
 #define JNI(name) Java_io_github_cloudwithax_nodosumi_NativeLibrary_##name
 
-#define VIDEO_WIDTH 640
-#define VIDEO_HEIGHT 480
 #define AUDIO_FREQ 44100
 #define MAX_PORTS 4
 
@@ -32,7 +30,8 @@ static char game_path[1024];
 static int started;
 
 /*
- * options, set by the app before start and handed out through GET_VARIABLE
+ * options, set by the app and handed out through GET_VARIABLE. the app sets
+ * them on the gl thread, so a change mid-game is seen by the next retro_run
  */
 #define MAX_OPTIONS 32
 
@@ -41,6 +40,7 @@ static struct {
   char value[64];
 } options[MAX_OPTIONS];
 static int num_options;
+static int options_updated;
 
 static const char *option_get(const char *key) {
   for (int i = 0; i < num_options; i++) {
@@ -66,6 +66,7 @@ static void option_set(const char *key, const char *value, int overwrite) {
   }
   snprintf(options[i].key, sizeof(options[i].key), "%s", key);
   snprintf(options[i].value, sizeof(options[i].value), "%s", value);
+  options_updated = 1;
 }
 
 /*
@@ -208,6 +209,8 @@ static struct retro_hw_render_callback hw_render;
 static void *gles;
 static GLuint fbo, fbo_color, fbo_depth;
 static int surface_width, surface_height;
+/* the core's internal resolution, from its geometry once the game's loaded */
+static int video_width, video_height;
 
 static uintptr_t get_current_framebuffer() {
   return fbo;
@@ -235,12 +238,12 @@ static void fbo_destroy() {
 static void fbo_create() {
   glGenRenderbuffers(1, &fbo_color);
   glBindRenderbuffer(GL_RENDERBUFFER, fbo_color);
-  glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, VIDEO_WIDTH, VIDEO_HEIGHT);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, video_width, video_height);
 
   glGenRenderbuffers(1, &fbo_depth);
   glBindRenderbuffer(GL_RENDERBUFFER, fbo_depth);
-  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, VIDEO_WIDTH,
-                        VIDEO_HEIGHT);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, video_width,
+                        video_height);
 
   glGenFramebuffers(1, &fbo);
   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -253,18 +256,18 @@ static void fbo_create() {
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-/* the core letterboxes inside its 640x480 frame for a 4:3 screen, take just
-   the picture and fit it to the window */
+/* the core letterboxes inside its 4:3 frame for a 4:3 screen, take just the
+   picture and fit it to the window */
 static void present() {
   const char *aspect = option_get("nodosumi_aspect");
-  int sx0 = 0, sy0 = 0, sx1 = VIDEO_WIDTH, sy1 = VIDEO_HEIGHT;
+  int sx0 = 0, sy0 = 0, sx1 = video_width, sy1 = video_height;
   int dx0 = 0, dy0 = 0, dx1 = surface_width, dy1 = surface_height;
 
   if (!aspect || strcmp(aspect, "stretch")) {
     float ratio = 4.0f / 3.0f;
     if (aspect && !strcmp(aspect, "16:9")) {
-      int h = VIDEO_WIDTH * 9 / 16;
-      sy0 = (VIDEO_HEIGHT - h) / 2;
+      int h = video_width * 9 / 16;
+      sy0 = (video_height - h) / 2;
       sy1 = sy0 + h;
       ratio = 16.0f / 9.0f;
     }
@@ -351,8 +354,23 @@ static bool environment(unsigned cmd, void *data) {
     }
 
     case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
-      *(bool *)data = false;
+      *(bool *)data = options_updated;
+      options_updated = 0;
       return true;
+
+    case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO: {
+      /* a new internal resolution, called from retro_run with the context
+         current. the core asks for the framebuffer each frame, so it's simply
+         remade at the new size */
+      const struct retro_system_av_info *av = data;
+      video_width = av->geometry.base_width;
+      video_height = av->geometry.base_height;
+      if (fbo) {
+        fbo_destroy();
+        fbo_create();
+      }
+      return true;
+    }
 
     case RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE:
       ((struct retro_rumble_interface *)data)->set_rumble_state =
@@ -449,6 +467,12 @@ JNIEXPORT jboolean JNICALL JNI(start)(JNIEnv *env, jobject thiz,
     LOGW("retro_load_game failed for %s", game_path);
     return JNI_FALSE;
   }
+
+  struct retro_system_av_info av;
+  retro_get_system_av_info(&av);
+  video_width = av.geometry.base_width;
+  video_height = av.geometry.base_height;
+  options_updated = 0;
 
   audio_open();
   started = 1;

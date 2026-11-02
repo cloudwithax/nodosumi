@@ -156,6 +156,8 @@ void r_destroy(struct render_backend *r);
 
 int r_width(struct render_backend *r);
 int r_height(struct render_backend *r);
+/* the size of the host's framebuffer changed */
+void r_resize(struct render_backend *r, int width, int height);
 
 texture_handle_t r_create_texture(struct render_backend *r,
                                   enum pxl_format format,

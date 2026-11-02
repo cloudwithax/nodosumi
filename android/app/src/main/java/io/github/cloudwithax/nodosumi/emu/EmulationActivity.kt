@@ -39,9 +39,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ExitToApp
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Hd
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Texture
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
@@ -73,6 +75,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.github.cloudwithax.nodosumi.NativeLibrary
 import io.github.cloudwithax.nodosumi.R
+import io.github.cloudwithax.nodosumi.data.CoreOption
 import io.github.cloudwithax.nodosumi.data.Settings
 import io.github.cloudwithax.nodosumi.ui.NodosumiTheme
 import java.io.File
@@ -334,6 +337,8 @@ class EmulationActivity : ComponentActivity() {
         when (dialog) {
             "save", "load" -> SlotDialog(save = dialog == "save") { dialog = null }
             "disc" -> DiscDialog { dialog = null }
+            Settings.INTERNAL_RESOLUTION.key -> OptionDialog(Settings.INTERNAL_RESOLUTION) { dialog = null }
+            Settings.RTT_UPSCALE.key -> OptionDialog(Settings.RTT_UPSCALE) { dialog = null }
             "reset" -> AlertDialog(
                 onDismissRequest = { dialog = null },
                 title = { Text("Reset?") },
@@ -384,6 +389,8 @@ class EmulationActivity : ComponentActivity() {
                     padInUse.value = false
                 }
             }
+            item(Icons.Rounded.Hd, Settings.INTERNAL_RESOLUTION.title) { onDialog(Settings.INTERNAL_RESOLUTION.key) }
+            item(Icons.Rounded.Texture, Settings.RTT_UPSCALE.title) { onDialog(Settings.RTT_UPSCALE.key) }
             item(Icons.Rounded.RestartAlt, "Reset") { onDialog("reset") }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             item(Icons.AutoMirrored.Rounded.ExitToApp, "Exit") { exit() }
@@ -448,6 +455,39 @@ class EmulationActivity : ComponentActivity() {
                             RadioButton(selected = i == current, onClick = null)
                             Spacer(Modifier.width(12.dp))
                             Text("Disc ${i + 1}")
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        )
+    }
+
+    /** A core option the core picks up mid-game, applied on resume. */
+    @Composable
+    private fun OptionDialog(opt: CoreOption, onDismiss: () -> Unit) {
+        val current = Settings.core(opt).value
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(opt.title) },
+            text = {
+                Column {
+                    for ((value, label) in opt.values.zip(opt.labels)) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .selectable(selected = value == current, role = Role.RadioButton) {
+                                    onDismiss()
+                                    menuOpen.value = false
+                                    Settings.setCore(opt, value)
+                                    glView.queueEvent { NativeLibrary.setOption(opt.key, value) }
+                                },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = value == current, onClick = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text(label)
                         }
                     }
                 }
