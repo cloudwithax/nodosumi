@@ -13,8 +13,8 @@ android {
         // android 11
         minSdk = 30
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.3.0"
+        versionCode = 4
+        versionName = "1.4.0"
 
         ndk {
             // the jit only targets aarch64
