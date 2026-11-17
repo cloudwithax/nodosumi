@@ -1,5 +1,9 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #include <errno.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include "core/core.h"
@@ -16,6 +20,16 @@ thread_t thread_create(thread_fn fn, const char *name, void *data) {
     thread_destroy(pthread);
     return NULL;
   }
+
+#if defined(__linux__)
+  /* the kernel keeps 15 characters of it, for top and for a frontend telling
+     the threads apart */
+  if (name) {
+    char comm[16];
+    snprintf(comm, sizeof(comm), "%s", name);
+    pthread_setname_np(*pthread, comm);
+  }
+#endif
 
   return (thread_t)pthread;
 }

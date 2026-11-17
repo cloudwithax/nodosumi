@@ -758,6 +758,12 @@ static void *emu_run_thread(void *data) {
     emu_run_until_vblank(emu);
     FZ_E(z_emu);
     FT_E(emu_frame, ft_frame);
+    /* guest instructions so far, for the host time each takes (0 unless
+       NODOSUMI_COUNT_INSTRS has the jit count them), and the sh4's loads and
+       stores made through calls rather than fastmem (NODOSUMI_FTRACE_FINE) */
+    FT_C(sh4_instrs, prof_counter_load_current(COUNTER_sh4_instrs));
+    FT_C(arm7_instrs, prof_counter_load_current(COUNTER_arm7_instrs));
+    FT_C(sh4_mem_calls, (int64_t)sh4_mem_calls);
     ftrace_flush();
     ft_frame++;
     g_stat_ecpu = thread_cpu_ns() - c0;
@@ -1373,10 +1379,10 @@ struct emu *emu_create(struct host *host) {
     emu->res_mutex = mutex_create();
     emu->res_cond = cond_create();
 
-    emu->run_thread = thread_create(&emu_run_thread, NULL, emu);
+    emu->run_thread = thread_create(&emu_run_thread, "emu", emu);
     CHECK_NOTNULL(emu->run_thread);
 
-    emu->conv_thread = thread_create(&emu_conv_thread, NULL, emu);
+    emu->conv_thread = thread_create(&emu_conv_thread, "conv", emu);
     CHECK_NOTNULL(emu->conv_thread);
   }
 

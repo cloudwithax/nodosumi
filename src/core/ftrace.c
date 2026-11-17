@@ -298,6 +298,7 @@ void ftrace_init() {
   }
 
   pthread_create(&ft_writer, NULL, &ft_writer_thread, NULL);
+  pthread_setname_np(ft_writer, "nodo-ftrace");
 }
 
 void ftrace_shutdown() {

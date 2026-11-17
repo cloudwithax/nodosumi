@@ -79,6 +79,9 @@ struct sh4 {
 extern struct reg_cb sh4_cb[SH4_NUM_REGS];
 extern struct sh4_exception_info sh4_exceptions[SH4_NUM_EXCEPTIONS];
 extern struct sh4_interrupt_info sh4_interrupts[SH4_NUM_INTERRUPTS];
+/* loads and stores made through sh4_read* / sh4_write* calls from the jit's
+   slow paths and the interpreter, counted only with NODOSUMI_FTRACE_FINE */
+extern uint64_t sh4_mem_calls;
 
 struct sh4 *sh4_create(struct dreamcast *dc);
 void sh4_destroy(struct sh4 *sh4);

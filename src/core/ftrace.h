@@ -77,7 +77,8 @@ enum {
   X(gl_progs)                                                  \
   X(gl_binds)                                                  \
   X(gl_states)                                                 \
-  X(gl_uniforms)
+  X(gl_uniforms)                                               \
+  X(sh4_mem_calls)
 
 /* zones, exclusive time per thread */
 #define FTRACE_ZONES(X)                                        \

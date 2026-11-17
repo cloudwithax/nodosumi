@@ -247,6 +247,30 @@ static void sh4_write64(struct memory *mem, uint32_t addr, uint64_t data) {
   sh4_write32(mem, addr + 4, (uint32_t)(data >> 32));
 }
 
+uint64_t sh4_mem_calls;
+
+#define SH4_COUNTED_READ(n, type, fn)                                    \
+  static type sh4_read##n##_counted(struct memory *mem, uint32_t addr) { \
+    sh4_mem_calls++;                                                     \
+    return fn(mem, addr);                                                \
+  }
+
+#define SH4_COUNTED_WRITE(n, type, fn)                                  \
+  static void sh4_write##n##_counted(struct memory *mem, uint32_t addr, \
+                                     type data) {                       \
+    sh4_mem_calls++;                                                    \
+    fn(mem, addr, data);                                                \
+  }
+
+SH4_COUNTED_READ(8, uint8_t, sh4_read8)
+SH4_COUNTED_READ(16, uint16_t, sh4_read16)
+SH4_COUNTED_READ(32, uint32_t, sh4_read32)
+SH4_COUNTED_READ(64, uint64_t, sh4_read64)
+SH4_COUNTED_WRITE(8, uint8_t, sh4_write8)
+SH4_COUNTED_WRITE(16, uint16_t, sh4_write16)
+SH4_COUNTED_WRITE(32, uint32_t, sh4_write32)
+SH4_COUNTED_WRITE(64, uint64_t, sh4_write64)
+
 static struct jit_guest *sh4_guest_create(struct sh4 *sh4) {
   struct sh4_guest *guest = calloc(1, sizeof(struct sh4_guest));
 
@@ -266,6 +290,19 @@ static struct jit_guest *sh4_guest_create(struct sh4 *sh4) {
   guest->w16 = &sh4_write16;
   guest->w32 = &sh4_write32;
   guest->w64 = &sh4_write64;
+
+  /* counted only while tracing finely, so the calls cost nothing more
+     otherwise. the jit takes these when it compiles */
+  if (ftrace_fine) {
+    guest->r8 = &sh4_read8_counted;
+    guest->r16 = &sh4_read16_counted;
+    guest->r32 = &sh4_read32_counted;
+    guest->r64 = &sh4_read64_counted;
+    guest->w8 = &sh4_write8_counted;
+    guest->w16 = &sh4_write16_counted;
+    guest->w32 = &sh4_write32_counted;
+    guest->w64 = &sh4_write64_counted;
+  }
 
   /* for 0xe0000000-0xe3ffffff sh4_p4_write only does store queues, so the jit
      writes them directly */
