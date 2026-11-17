@@ -15,6 +15,7 @@ void emu_destroy(struct emu *emu);
 void emu_vid_created(struct emu *emu, struct render_backend *r);
 void emu_vid_destroyed(struct emu *emu);
 int emu_keydown(struct emu *emu, int port, int key, int16_t value);
+extern void (*emu_frame_input)(struct emu *emu);
 
 int emu_load(struct emu *emu, const char *path);
 void emu_open_tray(struct emu *emu);

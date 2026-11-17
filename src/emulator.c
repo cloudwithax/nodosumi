@@ -779,8 +779,16 @@ static void *emu_run_thread(void *data) {
   return NULL;
 }
 
+/* set by a frontend whose input has to land on frame boundaries (the profiling
+   bot), called on the emu thread as each frame starts */
+void (*emu_frame_input)(struct emu *emu);
+
 static void emu_run_until_vblank(struct emu *emu) {
   const int64_t step = HZ_TO_NANO(1000);
+
+  if (emu_frame_input) {
+    emu_frame_input(emu);
+  }
 
   emu->state = EMU_RUNFRAME;
 

@@ -272,6 +272,29 @@ static int bot_mark_line;
 static int16_t bot_state[NUM_CONTROLLER_DESC];
 static int bot_on = -1;
 
+/* the pad the bot wants for the next frame, which the emu thread presses as
+   that frame starts, so a replay lands on the same frames every run however
+   the video and emu threads happen to line up */
+static mutex_t bot_mutex;
+static int16_t bot_frame[NUM_CONTROLLER_DESC];
+static int16_t bot_pressed[NUM_CONTROLLER_DESC];
+static int bot_repress;
+
+static void bot_frame_input(struct emu *emu) {
+  int16_t want[NUM_CONTROLLER_DESC];
+  mutex_lock(bot_mutex);
+  memcpy(want, bot_frame, sizeof(want));
+  int all = bot_repress;
+  bot_repress = 0;
+  mutex_unlock(bot_mutex);
+  for (int i = 0; i < (int)NUM_CONTROLLER_DESC; i++) {
+    if (all || want[i] != bot_pressed[i]) {
+      emu_keydown(emu, controller_desc[i].port, controller_buttons[i], want[i]);
+      bot_pressed[i] = want[i];
+    }
+  }
+}
+
 bool retro_serialize(void *data, size_t size);
 bool retro_unserialize(const void *data, size_t size);
 size_t retro_serialize_size();
@@ -294,6 +317,12 @@ static void bot_file_state(const char *path, int save) {
       ok = fread(data, 1, size, fp) == size && retro_unserialize(data, size);
       fclose(fp);
     }
+  }
+  if (!save && ok) {
+    /* the state has its own pad, press the bot's again over it */
+    mutex_lock(bot_mutex);
+    bot_repress = 1;
+    mutex_unlock(bot_mutex);
   }
   free(data);
   fprintf(stderr, "nodosumi: bot %s %s %s\n", save ? "save" : "load", path,
@@ -326,6 +355,10 @@ static int bot_step() {
     const char *path = getenv("NODOSUMI_BOT");
     bot_fp = path ? fopen(path, "r") : NULL;
     bot_on = bot_fp != NULL;
+    if (bot_on) {
+      bot_mutex = mutex_create();
+      emu_frame_input = &bot_frame_input;
+    }
   }
   if (!bot_on) {
     return 0;
@@ -399,12 +432,23 @@ static void input_poll(struct host *host) {
       value = pressure > 0 ? pressure : (value ? INT16_MAX : 0);
     }
 
+    if (bot) {
+      /* pressed by bot_frame_input as the next frame starts */
+      mutex_lock(bot_mutex);
+      if (bot_frame[i] != value) {
+        LOG_INFO("bot input port=%u key=%d value=%d", desc->port,
+                 controller_buttons[i], value);
+      }
+      bot_frame[i] = value;
+      mutex_unlock(bot_mutex);
+      continue;
+    }
+
     if (host->input.state[i] == value) {
       continue;
     }
 
     int button = controller_buttons[i];
-    if (bot) LOG_INFO("bot input port=%u key=%d value=%d", desc->port, button, value);
 
     if (host->emu) {
       emu_keydown(host->emu, desc->port, button, value);
