@@ -23,6 +23,7 @@ void arm7_destroy(struct arm7 *arm);
 
 void arm7_debug_menu(struct arm7 *arm);
 void arm7_suspend(struct arm7 *arm);
+void arm7_flush(struct arm7 *arm);
 void arm7_load_running(struct arm7 *arm, int resetting);
 void arm7_reset(struct arm7 *arm);
 void arm7_raise_interrupt(struct arm7 *arm, enum arm7_interrupt intr);

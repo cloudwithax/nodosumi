@@ -787,6 +787,8 @@ static void emu_run_until_vblank(struct emu *emu) {
   while (emu->state == EMU_RUNFRAME || emu->state == EMU_DRAWFRAME) {
     dc_tick(emu->dc, step);
   }
+
+  arm7_flush(emu->dc->arm7);
 }
 
 static int64_t g_stat_ta;
