@@ -37,6 +37,21 @@ void a64_dispatch_patch_edge(struct jit_backend *base, void *code, void *dst) {
   __builtin___clear_cache((char *)code, (char *)code + 4);
 }
 
+/* an indirect branch's guess, see a64_backend_emit_branch: the first target
+   seen becomes the one it compares with, linked like a direct branch, and the
+   call that made the guess turns into a nop */
+static void a64_dispatch_predict(struct a64_backend *backend, uint32_t *call) {
+  struct jit_guest *guest = backend->base.guest;
+  uint32_t pc = *(uint32_t *)((uint8_t *)guest->ctx + guest->offset_pc);
+  uint32_t *site = call - A64_PREDICT_CALL;
+
+  site[0] = 0x52800010 | ((pc & 0xffff) << 5);         /* movz w16, lo */
+  site[1] = 0x72a00010 | ((pc >> 16) << 5);            /* movk w16, hi, lsl 16 */
+  site[A64_PREDICT_CALL - 1] = pc;                     /* the link's target */
+  site[A64_PREDICT_CALL] = 0xd503201f;                 /* nop */
+  __builtin___clear_cache((char *)site, (char *)(site + A64_PREDICT_CALL + 1));
+}
+
 void a64_dispatch_invalidate_code(struct jit_backend *base, uint32_t addr) {
   struct a64_backend *backend = container_of(base, struct a64_backend, base);
   *cache_slot(backend, addr) = backend->dispatch_compile;
@@ -83,6 +98,14 @@ void a64_dispatch_emit_thunks(struct a64_backend *backend) {
   masm.Ldr(w2, MemOperand(x30));
   masm.Str(w2, MemOperand(x28, guest->offset_pc));
   masm.Ldr(x16, (uint64_t)guest->link_code);
+  masm.Blr(x16);
+  branch_back(masm, backend->dispatch_dynamic);
+
+  /* an indirect branch's first run: make its guess, then dispatch */
+  backend->dispatch_predict = masm_pc(masm);
+  masm.Ldr(x0, (uint64_t)backend);
+  masm.Sub(x1, x30, 4);
+  masm.Ldr(x16, (uint64_t)&a64_dispatch_predict);
   masm.Blr(x16);
   branch_back(masm, backend->dispatch_dynamic);
 

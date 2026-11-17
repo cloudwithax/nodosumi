@@ -411,9 +411,22 @@ void a64_backend_emit_branch(struct a64_backend *backend, MacroAssembler &e,
       e.dc32((uint32_t)target->i32);
     } break;
     case 2: {
-      /* same lookup as the dynamic thunk, inline, so each indirect branch
-         gets its own predictor entry rather than sharing the thunk's */
-      if (!target) {
+      /* an indirect branch first compares with the target it went to the
+         first time, and on a match takes a direct branch, linked like a static
+         one. the guess starts as 1, which no pc matches, and the call after
+         makes it, then becomes a nop. a miss does the same lookup as the
+         dynamic thunk, inline, so each indirect branch gets its own predictor
+         entry rather than sharing the thunk's */
+      if (target) {
+        ExactAssemblyScope scope(&e, (A64_PREDICT_CALL + 1) * 4);
+        e.movz(w16, 1, 0);
+        e.movk(w16, 0, 16);
+        e.cmp(pc, w16);
+        e.b(A64_PREDICT_CALL - 3, ne);
+        a64_emit_bl(e, backend->dispatch_static);
+        e.dc32(1);
+        a64_emit_bl(e, backend->dispatch_predict);
+      } else {
         e.Ldr(pc, MemOperand(a64_guestctx, guest->offset_pc));
       }
       int width = 32 - backend->cache_shift - clz32(backend->cache_mask);

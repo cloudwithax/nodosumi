@@ -37,6 +37,7 @@ struct a64_backend {
   void *dispatch_static;
   void *dispatch_compile;
   void *dispatch_interrupt;
+  void *dispatch_predict;
   void (*dispatch_enter)(int32_t);
   void *dispatch_exit;
 
@@ -53,6 +54,10 @@ struct a64_backend {
 };
 
 #define A64_THUNK_SIZE 16384
+
+/* an indirect branch's guess: movz/movk w16, cmp, b.ne, bl dispatch_static
+   and its target word, then the bl dispatch_predict at this word index */
+#define A64_PREDICT_CALL 6
 
 /* stack frame: saved lr/fp + callee-saved regs, then scratch for ir locals */
 #define A64_STACK_LOCALS 160
