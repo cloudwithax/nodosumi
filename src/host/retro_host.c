@@ -108,7 +108,7 @@ struct host *g_host;
 /* the frontend gave us a context with the minimum GL version */
 static int g_gl_ok = 0;
 
-/* glad's desktop loader leaves out the gles3 entry point, look it up by hand */
+/* discard attachments after presenting the frame */
 static PFNGLINVALIDATEFRAMEBUFFERPROC invalidate_fb;
 static int g_stats = -1;
 
@@ -509,12 +509,16 @@ static int gl_version_supported(const char *version) {
 }
 
 static void video_context_reset() {
-  /* link in gl functions at runtime */
-  int res = gladLoadGLLoader((GLADloadproc)hw_render.get_proc_address);
+  /* Load the ES API we requested, not desktop entry points by version number. */
+  int res = gladLoadGLES2Loader((GLADloadproc)hw_render.get_proc_address);
+  fprintf(stderr, "nodosumi: GLES loader=%d\n", res);
   CHECK_EQ(res, 1, "GL initialization failed");
 
   /* check the version before touching any gl state */
   const char *version = (const char *)glGetString(GL_VERSION);
+  fprintf(stderr, "nodosumi: GL vendor=%s renderer=%s version=%s\n",
+          glGetString(GL_VENDOR), glGetString(GL_RENDERER),
+          version ? version : "unknown");
   if (!gl_version_supported(version)) {
     LOG_WARNING("nodosumi requires %s (got \"%s\")", GL_MIN_NAME,
                 version ? version : "unknown");
@@ -525,16 +529,6 @@ static void video_context_reset() {
   g_gl_ok = 1;
   invalidate_fb = (PFNGLINVALIDATEFRAMEBUFFERPROC)
       hw_render.get_proc_address("glInvalidateFramebuffer");
-
-  glad_glInvalidateFramebuffer = invalidate_fb;
-
-  /* glad loads by desktop gl version, which has these only from 4.1 */
-  glad_glProgramParameteri = (PFNGLPROGRAMPARAMETERIPROC)
-      hw_render.get_proc_address("glProgramParameteri");
-  glad_glGetProgramBinary = (PFNGLGETPROGRAMBINARYPROC)
-      hw_render.get_proc_address("glGetProgramBinary");
-  glad_glProgramBinary = (PFNGLPROGRAMBINARYPROC)
-      hw_render.get_proc_address("glProgramBinary");
 
   memset(&gpu_q, 0, sizeof(gpu_q));
   const char *exts = (const char *)glGetString(GL_EXTENSIONS);

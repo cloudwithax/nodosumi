@@ -509,8 +509,8 @@ static void r_create_textures(struct render_backend *r) {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
   GLenum buffers[] = {GL_COLOR_ATTACHMENT0};
-  glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, r->pixel_texture,
-                       0);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                         r->pixel_texture, 0);
   glDrawBuffers(ARRAY_SIZE(buffers), buffers);
 
   GLenum res = glCheckFramebufferStatus(GL_FRAMEBUFFER);
