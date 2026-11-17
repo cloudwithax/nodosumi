@@ -1,0 +1,499 @@
+{
+  "device": "Retroid Pocket 5",
+  "gpu": "Adreno 650",
+  "date": "2026-11-02",
+  "scene": "Crazy Taxi 2 attract driving scene; save-state replay, not interactive gameplay",
+  "frame_window": [
+    300,
+    899
+  ],
+  "measured_frames_per_run": 600,
+  "artifacts_directory": "/tmp/nodosumi-benchmark",
+  "results": [
+    {
+      "measured_seconds": 9.986,
+      "core_frames": 600,
+      "emulation_fps": 60.0,
+      "first_frame": 300,
+      "last_frame": 899,
+      "retro_run": {
+        "mean_ms": 1.278,
+        "p50_ms": 1.2,
+        "p95_ms": 2.01,
+        "p99_ms": 3.418
+      },
+      "emu_frame": {
+        "mean_ms": 2.412,
+        "p50_ms": 2.375,
+        "p95_ms": 3.155,
+        "p99_ms": 3.656
+      },
+      "android_frame": {
+        "mean_ms": 16.1,
+        "p50_ms": 16.178,
+        "p95_ms": 17.437,
+        "p99_ms": 17.689
+      },
+      "android_present": {
+        "mean_ms": 14.812,
+        "p50_ms": 14.943,
+        "p95_ms": 16.481,
+        "p99_ms": 16.904
+      },
+      "begin_frame": {
+        "mean_ms": 1.233,
+        "p50_ms": 1.153,
+        "p95_ms": 1.958,
+        "p99_ms": 3.369
+      },
+      "display_intervals": {
+        "mean_ms": 16.667,
+        "p50_ms": 16.76,
+        "p95_ms": 18.065,
+        "p99_ms": 18.359
+      },
+      "display_intervals_over_25ms": 0,
+      "gl_draws": 369.45,
+      "verts": 12301.24,
+      "vid_src": 1,
+      "gpu_draw": {
+        "mean_ms": 0.458,
+        "p50_ms": 0.451,
+        "p95_ms": 0.731,
+        "p99_ms": 0.803
+      },
+      "dropped_trace_events": 0,
+      "configuration": {
+        "game": "/storage/FBD7-A44C/dreamcast/Crazy Taxi 2.cdi",
+        "bot": "/tmp/nodosumi-benchmark/replay.bot",
+        "resolution": "640x480",
+        "aspect": "4:3",
+        "wide": false,
+        "baseline": false,
+        "seconds": 18,
+        "first_frame": 300,
+        "last_frame": 900,
+        "output": "/tmp/nodosumi-benchmark/1x-optimized"
+      },
+      "run": "1x-optimized",
+      "battery_before": "temperature: 280",
+      "battery_after": "temperature: 280"
+    },
+    {
+      "measured_seconds": 9.985,
+      "core_frames": 600,
+      "emulation_fps": 60.0,
+      "first_frame": 300,
+      "last_frame": 899,
+      "retro_run": {
+        "mean_ms": 1.368,
+        "p50_ms": 1.243,
+        "p95_ms": 2.618,
+        "p99_ms": 3.481
+      },
+      "emu_frame": {
+        "mean_ms": 2.467,
+        "p50_ms": 2.445,
+        "p95_ms": 3.269,
+        "p99_ms": 3.775
+      },
+      "android_frame": {
+        "mean_ms": 16.102,
+        "p50_ms": 16.168,
+        "p95_ms": 17.324,
+        "p99_ms": 17.597
+      },
+      "android_present": {
+        "mean_ms": 14.723,
+        "p50_ms": 14.865,
+        "p95_ms": 16.712,
+        "p99_ms": 17.316
+      },
+      "begin_frame": {
+        "mean_ms": 1.252,
+        "p50_ms": 1.173,
+        "p95_ms": 2.021,
+        "p99_ms": 3.284
+      },
+      "display_intervals": {
+        "mean_ms": 16.666,
+        "p50_ms": 16.757,
+        "p95_ms": 17.931,
+        "p99_ms": 18.227
+      },
+      "display_intervals_over_25ms": 0,
+      "gl_draws": 369.45,
+      "verts": 12301.24,
+      "vid_src": 1,
+      "gpu_draw": {
+        "mean_ms": 0.827,
+        "p50_ms": 0.823,
+        "p95_ms": 1.22,
+        "p99_ms": 1.292
+      },
+      "dropped_trace_events": 0,
+      "configuration": {
+        "game": "/storage/FBD7-A44C/dreamcast/Crazy Taxi 2.cdi",
+        "bot": "/tmp/nodosumi-benchmark/replay.bot",
+        "resolution": "1280x960",
+        "aspect": "4:3",
+        "wide": false,
+        "baseline": false,
+        "seconds": 18,
+        "first_frame": 300,
+        "last_frame": 900,
+        "output": "/tmp/nodosumi-benchmark/2x-optimized"
+      },
+      "run": "2x-optimized",
+      "battery_before": "temperature: 280",
+      "battery_after": "temperature: 280"
+    },
+    {
+      "measured_seconds": 9.983,
+      "core_frames": 600,
+      "emulation_fps": 60.01,
+      "first_frame": 300,
+      "last_frame": 899,
+      "retro_run": {
+        "mean_ms": 1.27,
+        "p50_ms": 1.177,
+        "p95_ms": 1.962,
+        "p99_ms": 3.823
+      },
+      "emu_frame": {
+        "mean_ms": 2.506,
+        "p50_ms": 2.478,
+        "p95_ms": 3.239,
+        "p99_ms": 3.688
+      },
+      "android_frame": {
+        "mean_ms": 16.081,
+        "p50_ms": 16.136,
+        "p95_ms": 17.21,
+        "p99_ms": 17.602
+      },
+      "android_present": {
+        "mean_ms": 14.798,
+        "p50_ms": 14.94,
+        "p95_ms": 16.255,
+        "p99_ms": 16.757
+      },
+      "begin_frame": {
+        "mean_ms": 1.222,
+        "p50_ms": 1.133,
+        "p95_ms": 1.869,
+        "p99_ms": 3.767
+      },
+      "display_intervals": {
+        "mean_ms": 16.663,
+        "p50_ms": 16.717,
+        "p95_ms": 17.829,
+        "p99_ms": 18.328
+      },
+      "display_intervals_over_25ms": 0,
+      "gl_draws": 369.45,
+      "verts": 12301.24,
+      "vid_src": 1,
+      "gpu_draw": {
+        "mean_ms": 2.037,
+        "p50_ms": 2.059,
+        "p95_ms": 2.754,
+        "p99_ms": 2.911
+      },
+      "dropped_trace_events": 0,
+      "configuration": {
+        "game": "/storage/FBD7-A44C/dreamcast/Crazy Taxi 2.cdi",
+        "bot": "/tmp/nodosumi-benchmark/replay.bot",
+        "resolution": "2560x1920",
+        "aspect": "4:3",
+        "wide": false,
+        "baseline": false,
+        "seconds": 18,
+        "first_frame": 300,
+        "last_frame": 900,
+        "output": "/tmp/nodosumi-benchmark/4x-optimized"
+      },
+      "run": "4x-optimized",
+      "battery_before": "temperature: 280",
+      "battery_after": "temperature: 280"
+    },
+    {
+      "measured_seconds": 9.987,
+      "core_frames": 600,
+      "emulation_fps": 59.99,
+      "first_frame": 300,
+      "last_frame": 899,
+      "retro_run": {
+        "mean_ms": 1.485,
+        "p50_ms": 1.3,
+        "p95_ms": 2.843,
+        "p99_ms": 3.457
+      },
+      "emu_frame": {
+        "mean_ms": 2.502,
+        "p50_ms": 2.487,
+        "p95_ms": 3.149,
+        "p99_ms": 3.589
+      },
+      "android_frame": {
+        "mean_ms": 16.087,
+        "p50_ms": 16.145,
+        "p95_ms": 17.342,
+        "p99_ms": 17.617
+      },
+      "android_present": {
+        "mean_ms": 14.595,
+        "p50_ms": 14.833,
+        "p95_ms": 17.077,
+        "p99_ms": 17.477
+      },
+      "begin_frame": {
+        "mean_ms": 1.241,
+        "p50_ms": 1.183,
+        "p95_ms": 2.024,
+        "p99_ms": 2.828
+      },
+      "display_intervals": {
+        "mean_ms": 16.667,
+        "p50_ms": 16.756,
+        "p95_ms": 17.962,
+        "p99_ms": 18.314
+      },
+      "display_intervals_over_25ms": 0,
+      "gl_draws": 369.45,
+      "verts": 12301.24,
+      "vid_src": 1,
+      "gpu_draw": {
+        "mean_ms": 1.953,
+        "p50_ms": 1.988,
+        "p95_ms": 2.664,
+        "p99_ms": 2.801
+      },
+      "dropped_trace_events": 0,
+      "configuration": {
+        "game": "/storage/FBD7-A44C/dreamcast/Crazy Taxi 2.cdi",
+        "bot": "/tmp/nodosumi-benchmark/replay.bot",
+        "resolution": "2560x1920",
+        "aspect": "4:3",
+        "wide": true,
+        "baseline": true,
+        "seconds": 18,
+        "first_frame": 300,
+        "last_frame": 900,
+        "output": "/tmp/nodosumi-benchmark/4x-wide-baseline"
+      },
+      "run": "4x-wide-baseline",
+      "battery_before": "temperature: 280",
+      "battery_after": "temperature: 280"
+    },
+    {
+      "measured_seconds": 9.987,
+      "core_frames": 600,
+      "emulation_fps": 59.99,
+      "first_frame": 300,
+      "last_frame": 899,
+      "retro_run": {
+        "mean_ms": 1.332,
+        "p50_ms": 1.234,
+        "p95_ms": 2.28,
+        "p99_ms": 3.215
+      },
+      "emu_frame": {
+        "mean_ms": 2.459,
+        "p50_ms": 2.42,
+        "p95_ms": 3.176,
+        "p99_ms": 3.824
+      },
+      "android_frame": {
+        "mean_ms": 16.079,
+        "p50_ms": 16.15,
+        "p95_ms": 17.35,
+        "p99_ms": 17.723
+      },
+      "android_present": {
+        "mean_ms": 14.739,
+        "p50_ms": 14.895,
+        "p95_ms": 16.568,
+        "p99_ms": 16.965
+      },
+      "begin_frame": {
+        "mean_ms": 1.251,
+        "p50_ms": 1.172,
+        "p95_ms": 1.987,
+        "p99_ms": 2.676
+      },
+      "display_intervals": {
+        "mean_ms": 16.665,
+        "p50_ms": 16.741,
+        "p95_ms": 18.021,
+        "p99_ms": 18.402
+      },
+      "display_intervals_over_25ms": 0,
+      "gl_draws": 369.45,
+      "verts": 12301.24,
+      "vid_src": 1,
+      "gpu_draw": {
+        "mean_ms": 1.618,
+        "p50_ms": 1.631,
+        "p95_ms": 2.283,
+        "p99_ms": 2.408
+      },
+      "dropped_trace_events": 0,
+      "configuration": {
+        "game": "/storage/FBD7-A44C/dreamcast/Crazy Taxi 2.cdi",
+        "bot": "/tmp/nodosumi-benchmark/replay.bot",
+        "resolution": "2560x1920",
+        "aspect": "4:3",
+        "wide": true,
+        "baseline": false,
+        "seconds": 18,
+        "first_frame": 300,
+        "last_frame": 900,
+        "output": "/tmp/nodosumi-benchmark/4x-wide-optimized"
+      },
+      "run": "4x-wide-optimized",
+      "battery_before": "temperature: 280",
+      "battery_after": "temperature: 280"
+    },
+    {
+      "measured_seconds": 9.985,
+      "core_frames": 600,
+      "emulation_fps": 60.0,
+      "first_frame": 300,
+      "last_frame": 899,
+      "retro_run": {
+        "mean_ms": 1.35,
+        "p50_ms": 1.217,
+        "p95_ms": 2.689,
+        "p99_ms": 3.403
+      },
+      "emu_frame": {
+        "mean_ms": 2.531,
+        "p50_ms": 2.496,
+        "p95_ms": 3.203,
+        "p99_ms": 3.819
+      },
+      "android_frame": {
+        "mean_ms": 16.068,
+        "p50_ms": 16.103,
+        "p95_ms": 17.104,
+        "p99_ms": 17.52
+      },
+      "android_present": {
+        "mean_ms": 14.708,
+        "p50_ms": 14.866,
+        "p95_ms": 16.403,
+        "p99_ms": 17.102
+      },
+      "begin_frame": {
+        "mean_ms": 1.247,
+        "p50_ms": 1.161,
+        "p95_ms": 2.232,
+        "p99_ms": 2.978
+      },
+      "display_intervals": {
+        "mean_ms": 16.667,
+        "p50_ms": 16.709,
+        "p95_ms": 17.639,
+        "p99_ms": 18.187
+      },
+      "display_intervals_over_25ms": 0,
+      "gl_draws": 369.45,
+      "verts": 12301.24,
+      "vid_src": 1,
+      "gpu_draw": {
+        "mean_ms": 1.945,
+        "p50_ms": 1.98,
+        "p95_ms": 2.651,
+        "p99_ms": 2.795
+      },
+      "dropped_trace_events": 0,
+      "configuration": {
+        "game": "/storage/FBD7-A44C/dreamcast/Crazy Taxi 2.cdi",
+        "bot": "/tmp/nodosumi-benchmark/replay.bot",
+        "resolution": "2560x1920",
+        "aspect": "4:3",
+        "wide": true,
+        "baseline": true,
+        "seconds": 18,
+        "first_frame": 300,
+        "last_frame": 900,
+        "output": "/tmp/nodosumi-benchmark/4x-wide-baseline-repeat"
+      },
+      "run": "4x-wide-baseline-repeat",
+      "battery_before": "temperature: 280",
+      "battery_after": "temperature: 280"
+    },
+    {
+      "measured_seconds": 9.985,
+      "core_frames": 600,
+      "emulation_fps": 60.0,
+      "first_frame": 300,
+      "last_frame": 899,
+      "retro_run": {
+        "mean_ms": 1.286,
+        "p50_ms": 1.214,
+        "p95_ms": 2.074,
+        "p99_ms": 3.07
+      },
+      "emu_frame": {
+        "mean_ms": 2.505,
+        "p50_ms": 2.473,
+        "p95_ms": 3.295,
+        "p99_ms": 3.941
+      },
+      "android_frame": {
+        "mean_ms": 16.094,
+        "p50_ms": 16.144,
+        "p95_ms": 17.327,
+        "p99_ms": 17.644
+      },
+      "android_present": {
+        "mean_ms": 14.797,
+        "p50_ms": 14.922,
+        "p95_ms": 16.279,
+        "p99_ms": 16.876
+      },
+      "begin_frame": {
+        "mean_ms": 1.241,
+        "p50_ms": 1.163,
+        "p95_ms": 2.042,
+        "p99_ms": 3.024
+      },
+      "display_intervals": {
+        "mean_ms": 16.666,
+        "p50_ms": 16.736,
+        "p95_ms": 17.958,
+        "p99_ms": 18.302
+      },
+      "display_intervals_over_25ms": 0,
+      "gl_draws": 369.45,
+      "verts": 12301.24,
+      "vid_src": 1,
+      "gpu_draw": {
+        "mean_ms": 1.608,
+        "p50_ms": 1.619,
+        "p95_ms": 2.272,
+        "p99_ms": 2.4
+      },
+      "dropped_trace_events": 0,
+      "configuration": {
+        "game": "/storage/FBD7-A44C/dreamcast/Crazy Taxi 2.cdi",
+        "bot": "/tmp/nodosumi-benchmark/replay.bot",
+        "resolution": "2560x1920",
+        "aspect": "4:3",
+        "wide": true,
+        "baseline": false,
+        "seconds": 18,
+        "first_frame": 300,
+        "last_frame": 900,
+        "output": "/tmp/nodosumi-benchmark/4x-wide-optimized-repeat"
+      },
+      "run": "4x-wide-optimized-repeat",
+      "battery_before": "temperature: 280",
+      "battery_after": "temperature: 280"
+    }
+  ],
+  "original_app_data_files_verified_unchanged": 17,
+  "save_state_location": "device app data: files/benchmark/replay.state"
+}

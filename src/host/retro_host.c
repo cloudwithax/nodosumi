@@ -148,6 +148,7 @@ static struct retro_variable g_opts[] = {
     {"nodosumi_broadcast", "Broadcast; ntsc|pal|pal_m|pal_n"},
     {"nodosumi_bios", "Boot to BIOS; disabled|enabled"},
     {"nodosumi_aspect", "Aspect ratio; 4:3|16:9|stretch"},
+    {"nodosumi_widescreen", "Widescreen expansion (may cause pop-in); disabled|enabled"},
     {"nodosumi_internal_resolution",
      "Internal resolution; 640x480|320x240|960x720|1280x960|1440x1080|"
      "1600x1200|1920x1440|2560x1920|2880x2160|3200x2400|3840x2880"},
@@ -187,6 +188,21 @@ static int read_video_options() {
   const char *rtt = get_variable("nodosumi_rtt_upscale");
   if (!rtt || sscanf(rtt, "%dx", &OPTION_rtt_scale) != 1) {
     OPTION_rtt_scale = 1;
+  }
+
+  const char *wide = get_variable("nodosumi_widescreen");
+  OPTION_widescreen = wide && !strcmp(wide, "enabled");
+  const char *aspect = OPTION_widescreen ? "16:9" : get_variable("nodosumi_aspect");
+  if (aspect && strcmp(OPTION_aspect, aspect)) {
+    snprintf(OPTION_aspect, sizeof(OPTION_aspect), "%s", aspect);
+    OPTION_aspect_dirty = 1;
+  }
+
+  /* A 16:9 picture used to occupy only the middle 75% of a 4:3 target.
+     Allocate just the picture: the viewport keeps the same pixel dimensions
+     while tile GPUs store 25% less color and depth/stencil at every scale. */
+  if (OPTION_gpu_optimizations && !strcmp(OPTION_aspect, "16:9")) {
+    height = width * 9 / 16;
   }
 
   int changed = width != g_width || height != g_height;
@@ -353,8 +369,7 @@ static int bot_step() {
     while ((tok = strtok(NULL, " \t\r\n"))) {
       bot_set(tok);
     }
-    fprintf(stderr, "nodosumi: bot line %d at frame %lld\n", bot_line,
-            (long long)g_run_frame);
+    LOG_INFO("bot line %d at frame %lld", bot_line, (long long)g_run_frame);
   }
   bot_frames--;
   return 1;
@@ -374,10 +389,14 @@ static void input_poll(struct host *host) {
         bot ? (desc->port ? 0 : bot_state[i])
             : input_state_cb(desc->port, desc->device, desc->index, desc->id);
 
-    /* retroarch gives triggers as [0,1], the host layer wants [0,INT16_MAX] */
+    /* Analog button pressure is [0, INT16_MAX]; digital-only pads still
+       press a trigger fully. The bot also uses digital values. */
     if (desc->id == RETRO_DEVICE_ID_JOYPAD_L2 ||
         desc->id == RETRO_DEVICE_ID_JOYPAD_R2) {
-      value = value ? INT16_MAX : 0;
+      int16_t pressure = bot ? (value > 1 ? value : 0) : input_state_cb(
+          desc->port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON,
+          desc->id);
+      value = pressure > 0 ? pressure : (value ? INT16_MAX : 0);
     }
 
     if (host->input.state[i] == value) {
@@ -385,6 +404,7 @@ static void input_poll(struct host *host) {
     }
 
     int button = controller_buttons[i];
+    if (bot) LOG_INFO("bot input port=%u key=%d value=%d", desc->port, button, value);
 
     if (host->emu) {
       emu_keydown(host->emu, desc->port, button, value);
@@ -505,6 +525,8 @@ static void video_context_reset() {
   g_gl_ok = 1;
   invalidate_fb = (PFNGLINVALIDATEFRAMEBUFFERPROC)
       hw_render.get_proc_address("glInvalidateFramebuffer");
+
+  glad_glInvalidateFramebuffer = invalidate_fb;
 
   /* glad loads by desktop gl version, which has these only from 4.1 */
   glad_glProgramParameteri = (PFNGLPROGRAMPARAMETERIPROC)
@@ -666,7 +688,8 @@ void retro_get_system_av_info(struct retro_system_av_info *info) {
   info->geometry.base_height = g_height;
   info->geometry.max_width = g_width;
   info->geometry.max_height = g_height;
-  info->geometry.aspect_ratio = (float)VIDEO_WIDTH / (float)VIDEO_HEIGHT;
+  info->geometry.aspect_ratio = !strcmp(OPTION_aspect, "16:9")
+                                    ? 16.0f / 9.0f : 4.0f / 3.0f;
   info->timing.fps = 60;
   info->timing.sample_rate = AUDIO_FREQ;
 }

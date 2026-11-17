@@ -24,6 +24,9 @@ enum {
   X(thread_name)                                               \
   X(core_base)                                                 \
   X(dropped)                                                   \
+  X(android_frame)                                            \
+  X(android_present)                                          \
+  X(android_core_frames)                                      \
   X(emu_frame)                                                 \
   X(emu_idle)                                                  \
   X(start_render)                                              \

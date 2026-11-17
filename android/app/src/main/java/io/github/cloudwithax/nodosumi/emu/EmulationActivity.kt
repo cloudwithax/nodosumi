@@ -3,12 +3,14 @@ package io.github.cloudwithax.nodosumi.emu
 import android.content.Context
 import android.hardware.input.InputManager
 import android.opengl.GLSurfaceView
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.os.VibratorManager
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -106,7 +108,10 @@ class EmulationActivity : ComponentActivity() {
     private val padInUse = mutableStateOf(false)
     private val discs = mutableStateOf(0 to 0)
 
-    private var rumbleLast = 0
+    private val rumbleLast = IntArray(InputHub.PORTS) { -1 }
+    private val rumbleDevices = IntArray(InputHub.PORTS) { -1 }
+    private val motors = arrayOfNulls<Vibrator>(InputHub.PORTS)
+    @Volatile private var rumbleActive = false
     private var exiting = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -177,35 +182,65 @@ class EmulationActivity : ComponentActivity() {
         override fun onDrawFrame(gl: GL10?) {
             InputHub.push()
             NativeLibrary.frame()
-            val strength = if (Settings.rumble.value) NativeLibrary.rumble(0) else 0
-            if (strength != rumbleLast) {
-                rumbleLast = strength
-                main.post { rumble(strength) }
+            val strengths = IntArray(InputHub.PORTS) {
+                if (Settings.rumble.value) NativeLibrary.rumble(it) else 0
+            }
+            val devices = IntArray(InputHub.PORTS) { InputHub.deviceOnPort(it) ?: -1 }
+            if (!strengths.contentEquals(rumbleLast) || !devices.contentEquals(rumbleDevices)) {
+                strengths.copyInto(rumbleLast)
+                devices.copyInto(rumbleDevices)
+                main.post {
+                    if (rumbleActive && !menuOpen.value) {
+                        strengths.forEachIndexed { port, strength -> rumble(port, strength) }
+                    }
+                }
             }
         }
     }
 
-    /** The first controller's motor if it has one, else the phone's. */
-    private fun rumble(strength: Int) {
-        val device = InputHub.deviceOnPort(0)?.let { InputDevice.getDevice(it) }
+    /** Each pad drives its own motor. Only player one falls back to the phone. */
+    private fun rumble(port: Int, strength: Int) {
+        val device = InputHub.deviceOnPort(port)?.let { InputDevice.getDevice(it) }
         @Suppress("DEPRECATION")
-        val vibrator = device?.vibrator?.takeIf { it.hasVibrator() }
-            ?: getSystemService(Vibrator::class.java)
-            ?: return
+        val controller = if (Build.VERSION.SDK_INT >= 31) {
+            device?.vibratorManager?.defaultVibrator
+        } else device?.vibrator
+        val vibrator = controller?.takeIf { it.hasVibrator() } ?: if (port == 0) {
+            if (Build.VERSION.SDK_INT >= 31) {
+                getSystemService(VibratorManager::class.java)?.defaultVibrator
+            } else getSystemService(Vibrator::class.java)
+        } else null
+        if (motors[port] !== vibrator) motors[port]?.cancel()
+        motors[port] = vibrator
+        if (vibrator == null || !vibrator.hasVibrator()) return
         if (strength == 0) {
             vibrator.cancel()
         } else {
-            // the core says when to stop, so ask for longer than any one effect
-            val amp = (strength * 255 / 65535).coerceIn(1, 255)
-            vibrator.vibrate(VibrationEffect.createOneShot(2000, amp))
+            val amp = if (vibrator.hasAmplitudeControl()) {
+                (strength * 255 / 65535).coerceIn(1, 255)
+            } else VibrationEffect.DEFAULT_AMPLITUDE
+            // Repeat until the core stops the effect; long effects must not
+            // silently expire after two seconds at an unchanged strength.
+            vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 1000), intArrayOf(0, amp), 0))
         }
     }
 
+    private fun stopRumble() {
+        motors.forEach { it?.cancel() }
+        motors.fill(null)
+    }
+
+    private fun refreshRumble() {
+        stopRumble()
+        glView.queueEvent { rumbleLast.fill(-1) }
+    }
+
     private val devices = object : InputManager.InputDeviceListener {
-        override fun onInputDeviceAdded(id: Int) {}
-        override fun onInputDeviceChanged(id: Int) {}
+        override fun onInputDeviceAdded(id: Int) { refreshRumble() }
+        override fun onInputDeviceChanged(id: Int) { refreshRumble() }
         override fun onInputDeviceRemoved(id: Int) {
             InputHub.removeDevice(id)
+            refreshRumble()
             if (InputHub.deviceOnPort(0) == null) padInUse.value = false
         }
     }
@@ -235,12 +270,21 @@ class EmulationActivity : ComponentActivity() {
     }
 
     private fun setPaused(paused: Boolean) {
-        glView.queueEvent { NativeLibrary.setPaused(paused) }
+        if (paused) {
+            overlay.release()
+            InputHub.release()
+            stopRumble()
+        }
+        glView.queueEvent {
+            rumbleLast.fill(-1)
+            NativeLibrary.setPaused(paused)
+        }
     }
 
     override fun onResume() {
         super.onResume()
         if (!::glView.isInitialized) return
+        rumbleActive = true
         glView.onResume()
         setPaused(menuOpen.value)
     }
@@ -248,9 +292,9 @@ class EmulationActivity : ComponentActivity() {
     override fun onPause() {
         if (::glView.isInitialized) {
             // queued ahead of the pause, so the core stops before the GL thread does
+            rumbleActive = false
             setPaused(true)
             glView.onPause()
-            main.post { rumble(0) }
         }
         super.onPause()
     }
@@ -259,6 +303,8 @@ class EmulationActivity : ComponentActivity() {
         if (::glView.isInitialized) {
             getSystemService(InputManager::class.java).unregisterInputDeviceListener(devices)
         }
+        rumbleActive = false
+        stopRumble()
         super.onDestroy()
         if (exiting) Process.killProcess(Process.myPid())
     }
@@ -339,6 +385,8 @@ class EmulationActivity : ComponentActivity() {
             "save", "load" -> SlotDialog(save = dialog == "save") { dialog = null }
             "disc" -> DiscDialog { dialog = null }
             Settings.INTERNAL_RESOLUTION.key -> OptionDialog(Settings.INTERNAL_RESOLUTION) { dialog = null }
+            Settings.WIDESCREEN.key -> OptionDialog(Settings.WIDESCREEN) { dialog = null }
+            Settings.ASPECT.key -> OptionDialog(Settings.ASPECT) { dialog = null }
             Settings.RTT_UPSCALE.key -> OptionDialog(Settings.RTT_UPSCALE) { dialog = null }
             "reset" -> AlertDialog(
                 onDismissRequest = { dialog = null },
@@ -391,6 +439,8 @@ class EmulationActivity : ComponentActivity() {
                 }
             }
             item(Icons.Rounded.Hd, Settings.INTERNAL_RESOLUTION.title) { onDialog(Settings.INTERNAL_RESOLUTION.key) }
+            item(Icons.Rounded.Hd, Settings.ASPECT.title) { onDialog(Settings.ASPECT.key) }
+            item(Icons.Rounded.Hd, Settings.WIDESCREEN.title) { onDialog(Settings.WIDESCREEN.key) }
             item(Icons.Rounded.Texture, Settings.RTT_UPSCALE.title) { onDialog(Settings.RTT_UPSCALE.key) }
             item(Icons.Rounded.RestartAlt, "Reset") { onDialog("reset") }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))

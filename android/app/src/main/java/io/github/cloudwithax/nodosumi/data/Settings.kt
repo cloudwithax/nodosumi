@@ -37,6 +37,10 @@ object Settings {
         "nodosumi_aspect", "Aspect ratio",
         listOf("4:3", "16:9", "stretch"), listOf("4:3", "16:9", "Stretch"), "4:3",
     )
+    val WIDESCREEN = CoreOption(
+        "nodosumi_widescreen", "Widescreen expansion",
+        listOf("disabled", "enabled"), listOf("Off", "16:9"), "disabled",
+    )
     val ACCURATE_DEPTH = CoreOption(
         "nodosumi_accurate_depth", "Accurate depth",
         listOf("disabled", "enabled"), listOf("Off", "On"), "disabled",
@@ -57,7 +61,8 @@ object Settings {
     )
 
     val CORE_OPTIONS = listOf(
-        REGION, LANGUAGE, BROADCAST, BIOS, ASPECT, ACCURATE_DEPTH, INTERNAL_RESOLUTION, RTT_UPSCALE,
+        REGION, LANGUAGE, BROADCAST, BIOS, ASPECT, WIDESCREEN,
+        ACCURATE_DEPTH, INTERNAL_RESOLUTION, RTT_UPSCALE,
     )
 
     private lateinit var prefs: SharedPreferences

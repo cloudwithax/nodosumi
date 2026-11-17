@@ -53,6 +53,16 @@ android {
         }
     }
 
+    // Optimized native code with ADB-only profiling tools and app-data access.
+    buildTypes.create("benchmark") {
+        initWith(buildTypes.getByName("release"))
+        isDebuggable = true
+        isMinifyEnabled = false
+        isShrinkResources = false
+        matchingFallbacks += "release"
+        externalNativeBuild.cmake.arguments += "-DCMAKE_BUILD_TYPE=RelWithDebInfo"
+    }
+
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")

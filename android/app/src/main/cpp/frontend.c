@@ -15,6 +15,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "core/ftrace.h"
+#include "options.h"
 
 #define LOG_TAG "nodosumi"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -168,7 +170,7 @@ static void audio_sample(int16_t left, int16_t right) {
  */
 static struct {
   uint32_t buttons;
-  int16_t lx, ly;
+  int16_t lx, ly, lt, rt;
 } pads[MAX_PORTS];
 
 static void input_poll() {}
@@ -180,6 +182,13 @@ static int16_t input_state(unsigned port, unsigned device, unsigned index,
   }
   if (device == RETRO_DEVICE_JOYPAD) {
     return (pads[port].buttons >> id) & 1;
+  }
+  if (device == RETRO_DEVICE_ANALOG && index == RETRO_DEVICE_INDEX_ANALOG_BUTTON) {
+    if (id == RETRO_DEVICE_ID_JOYPAD_L2)
+      return (pads[port].buttons & (1u << id)) ? INT16_MAX : pads[port].lt;
+    if (id == RETRO_DEVICE_ID_JOYPAD_R2)
+      return (pads[port].buttons & (1u << id)) ? INT16_MAX : pads[port].rt;
+    return 0;
   }
   if (device == RETRO_DEVICE_ANALOG && index == RETRO_DEVICE_INDEX_ANALOG_LEFT) {
     return id == RETRO_DEVICE_ID_ANALOG_X ? pads[port].lx : pads[port].ly;
@@ -256,10 +265,12 @@ static void fbo_create() {
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-/* the core letterboxes inside its 4:3 frame for a 4:3 screen, take just the
-   picture and fit it to the window */
+/* Fit the active picture to the window. New 16:9 targets contain only the
+   picture; legacy 4:3 targets have top/bottom letterboxing to crop. */
 static void present() {
   const char *aspect = option_get("nodosumi_aspect");
+  const char *wide = option_get("nodosumi_widescreen");
+  if (wide && !strcmp(wide, "enabled")) aspect = "16:9";
   int sx0 = 0, sy0 = 0, sx1 = video_width, sy1 = video_height;
   int dx0 = 0, dy0 = 0, dx1 = surface_width, dy1 = surface_height;
 
@@ -286,12 +297,15 @@ static void present() {
     dy1 = dy0 + h;
   }
 
-  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
   glDisable(GL_SCISSOR_TEST);
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
   glViewport(0, 0, surface_width, surface_height);
   glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-  glClear(GL_COLOR_BUFFER_BIT);
+  /* A full-screen blit overwrites every pixel without a separate clear. */
+  if (!OPTION_gpu_optimizations || dx0 || dy0 || dx1 != surface_width || dy1 != surface_height) {
+    glClear(GL_COLOR_BUFFER_BIT);
+  }
 
   glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
   glBlitFramebuffer(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1,
@@ -430,6 +444,18 @@ static int frames_due() {
 /*
  * jni
  */
+/* Only the benchmark source set calls this, before starting the core. */
+JNIEXPORT void JNICALL JNI(configureBenchmark)(JNIEnv *env, jobject thiz,
+                                               jstring jbot, jstring jtrace, jboolean baseline) {
+  OPTION_gpu_optimizations = !baseline;
+  const char *bot = (*env)->GetStringUTFChars(env, jbot, NULL);
+  const char *trace = (*env)->GetStringUTFChars(env, jtrace, NULL);
+  setenv("NODOSUMI_BOT", bot, 1);
+  setenv("NODOSUMI_FTRACE", trace, 1);
+  (*env)->ReleaseStringUTFChars(env, jbot, bot);
+  (*env)->ReleaseStringUTFChars(env, jtrace, trace);
+}
+
 JNIEXPORT void JNICALL JNI(setOption)(JNIEnv *env, jobject thiz, jstring key,
                                       jstring value) {
   const char *k = (*env)->GetStringUTFChars(env, key, NULL);
@@ -519,11 +545,16 @@ JNIEXPORT void JNICALL JNI(frame)(JNIEnv *env, jobject thiz) {
     audio_open();
   }
 
+  FT_B(android_frame, 0);
   int n = frames_due();
+  FT_C(android_core_frames, n);
   for (int i = 0; i < n && !paused; i++) {
     retro_run();
   }
+  FT_B(android_present, 0);
   present();
+  FT_E(android_present, 0);
+  FT_E(android_frame, 0);
 }
 
 JNIEXPORT void JNICALL JNI(setPaused)(JNIEnv *env, jobject thiz,
@@ -541,13 +572,15 @@ JNIEXPORT void JNICALL JNI(setPaused)(JNIEnv *env, jobject thiz,
 }
 
 JNIEXPORT void JNICALL JNI(setInput)(JNIEnv *env, jobject thiz, jint port,
-                                     jint buttons, jint lx, jint ly) {
+                                     jint buttons, jint lx, jint ly, jint lt, jint rt) {
   if (port < 0 || port >= MAX_PORTS) {
     return;
   }
   pads[port].buttons = (uint32_t)buttons;
   pads[port].lx = (int16_t)lx;
   pads[port].ly = (int16_t)ly;
+  pads[port].lt = (int16_t)(lt < 0 ? 0 : lt > INT16_MAX ? INT16_MAX : lt);
+  pads[port].rt = (int16_t)(rt < 0 ? 0 : rt > INT16_MAX ? INT16_MAX : rt);
 }
 
 JNIEXPORT jint JNICALL JNI(rumble)(JNIEnv *env, jobject thiz, jint port) {

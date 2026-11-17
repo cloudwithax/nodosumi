@@ -19,6 +19,7 @@ object NativeLibrary {
     const val L = 12
     const val R = 13
 
+    external fun configureBenchmark(botPath: String, tracePath: String, baseline: Boolean)
     external fun setOption(key: String, value: String)
     external fun start(systemDir: String, gamePath: String): Boolean
     external fun stop()
@@ -26,7 +27,7 @@ object NativeLibrary {
     external fun surfaceChanged(width: Int, height: Int)
     external fun frame()
     external fun setPaused(paused: Boolean)
-    external fun setInput(port: Int, buttons: Int, lx: Int, ly: Int)
+    external fun setInput(port: Int, buttons: Int, lx: Int, ly: Int, lt: Int, rt: Int)
     external fun rumble(port: Int): Int
     external fun reset()
     external fun saveState(path: String): Boolean

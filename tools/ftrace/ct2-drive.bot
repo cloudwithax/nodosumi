@@ -1,0 +1,14 @@
+# CT2 profiling drive: wait out the boot, load the in-cab state, then wander
+# downtown and over the bridge on a fixed loop of gas and turns
+120
+load /mnt/sdcard/prof/ct2-drive.state
+mark
+240 r
+30 r jx=0.6
+240 r
+30 r jx=-0.6
+180 r
+20 r jx=1
+120 r
+25 r jx=-1
+loop

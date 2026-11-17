@@ -21,6 +21,9 @@
 
 - **Full speed on an H700** — AArch64 JIT tuned for the Cortex-A53
 - **libretro core and desktop app** — the desktop app runs on Linux, macOS, and Windows
+- **Android controls** — analog trigger pressure and per-controller rumble, with player-one phone vibration fallback
+- **Widescreen expansion** — optional 16:9 view in Android Graphics settings or the in-game menu; some games show pop-in or narrow HUDs
+- **Mobile GPU upscaling** — trimmed 16:9 framebuffers and RTT depth/stencil discard reduce storage and bandwidth on tile GPUs, including Adreno
 - **Save states** — byte-exact, and they survive between sessions
 - **Multi-disc** — `.m3u` playlists with RetroArch disk control
 - **Formats** — `.cdi`, `.chd`, `.gdi`, `.cue`, `.m3u`

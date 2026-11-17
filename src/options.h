@@ -66,6 +66,8 @@ DECLARE_OPTION_STRING(aspect);
 /* render */
 DECLARE_OPTION_INT(fast_depth);
 DECLARE_OPTION_INT(rtt_scale);
+DECLARE_OPTION_INT(widescreen);
+DECLARE_OPTION_INT(gpu_optimizations);
 
 /* bios */
 DECLARE_OPTION_STRING(region);

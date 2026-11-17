@@ -18,6 +18,9 @@ object InputHub {
         @Volatile var buttons = 0
         @Volatile var lx = 0
         @Volatile var ly = 0
+        @Volatile var lt = 0
+        @Volatile var rt = 0
+        val keys = mutableSetOf<Int>()
         // the hat and the triggers' axes share bits with keys, keep them apart
         @Volatile var axisButtons = 0
     }
@@ -44,7 +47,7 @@ object InputHub {
 
     fun removeDevice(id: Int) {
         val port = synchronized(ports) { ports.remove(id) } ?: return
-        pads[port].apply { buttons = 0; axisButtons = 0; lx = 0; ly = 0 }
+        clear(pads[port])
     }
 
     private fun bitOf(keyCode: Int): Int? = when (keyCode) {
@@ -74,14 +77,22 @@ object InputHub {
     /** Returns true if the key belonged to a controller and was taken. */
     fun onKey(event: KeyEvent): Boolean {
         if (!isController(event.device)) return false
-        val bit = bitOf(event.keyCode) ?: return false
+        bitOf(event.keyCode) ?: return false
         val port = portOf(event.device) ?: return true
         val pad = pads[port]
-        pad.buttons = when (event.action) {
-            KeyEvent.ACTION_DOWN -> pad.buttons or (1 shl bit)
-            KeyEvent.ACTION_UP -> pad.buttons and (1 shl bit).inv()
-            else -> pad.buttons
+        // Some drivers emit an L2/R2 key as soon as an analog trigger moves.
+        // Ignore that duplicate or it would turn partial pressure into 100%.
+        val axes = when (event.keyCode) {
+            KeyEvent.KEYCODE_BUTTON_L2 -> intArrayOf(MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_BRAKE)
+            KeyEvent.KEYCODE_BUTTON_R2 -> intArrayOf(MotionEvent.AXIS_RTRIGGER, MotionEvent.AXIS_GAS)
+            else -> intArrayOf()
         }
+        if (axes.any { (event.device?.getMotionRange(it)?.range ?: 0f) > 0f }) return true
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> pad.keys.add(event.keyCode)
+            KeyEvent.ACTION_UP -> pad.keys.remove(event.keyCode)
+        }
+        pad.buttons = pad.keys.fold(0) { bits, key -> bits or (1 shl (bitOf(key) ?: return@fold bits)) }
         return true
     }
 
@@ -102,17 +113,33 @@ object InputHub {
 
         val hx = axis(MotionEvent.AXIS_HAT_X)
         val hy = axis(MotionEvent.AXIS_HAT_Y)
-        val lt = maxOf(axis(MotionEvent.AXIS_LTRIGGER), axis(MotionEvent.AXIS_BRAKE))
-        val rt = maxOf(axis(MotionEvent.AXIS_RTRIGGER), axis(MotionEvent.AXIS_GAS))
+        fun trigger(vararg axes: Int): Int = (axes.maxOf { a ->
+            val range = device.getMotionRange(a, event.source) ?: device.getMotionRange(a)
+            if (range == null || range.range <= 0f) 0f else {
+                val value = (event.getAxisValue(a) - range.min) / range.range
+                if (value <= range.flat / range.range) 0f else value.coerceIn(0f, 1f)
+            }
+        } * Short.MAX_VALUE).roundToInt()
+        pad.lt = trigger(MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_BRAKE)
+        pad.rt = trigger(MotionEvent.AXIS_RTRIGGER, MotionEvent.AXIS_GAS)
         var bits = 0
         if (hx < -0.5f) bits = bits or (1 shl NativeLibrary.LEFT)
         if (hx > 0.5f) bits = bits or (1 shl NativeLibrary.RIGHT)
         if (hy < -0.5f) bits = bits or (1 shl NativeLibrary.UP)
         if (hy > 0.5f) bits = bits or (1 shl NativeLibrary.DOWN)
-        if (lt > 0.5f) bits = bits or (1 shl NativeLibrary.L)
-        if (rt > 0.5f) bits = bits or (1 shl NativeLibrary.R)
         pad.axisButtons = bits
         return true
+    }
+
+    private fun clear(pad: Pad) {
+        pad.keys.clear()
+        pad.buttons = 0; pad.axisButtons = 0
+        pad.lx = 0; pad.ly = 0; pad.lt = 0; pad.rt = 0
+    }
+
+    fun release() {
+        pads.forEach(::clear)
+        clear(touch)
     }
 
     /** Hands the current state to the core, on the GL thread. */
@@ -128,7 +155,7 @@ object InputHub {
                 lx = (lx + touch.lx).coerceIn(-Short.MAX_VALUE.toInt(), Short.MAX_VALUE.toInt())
                 ly = (ly + touch.ly).coerceIn(-Short.MAX_VALUE.toInt(), Short.MAX_VALUE.toInt())
             }
-            NativeLibrary.setInput(port, buttons, lx, ly)
+            NativeLibrary.setInput(port, buttons, lx, ly, pad.lt, pad.rt)
         }
     }
 }

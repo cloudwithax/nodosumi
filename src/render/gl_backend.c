@@ -1318,6 +1318,14 @@ void r_begin_ta_surfaces(struct render_backend *r, int video_width,
   r->uniform_video_scale[2] = -2.0f / (float)video_height;
   r->uniform_video_scale[3] = 1.0f;
 
+  /* The TA already supplies projected coordinates. Compress around the
+     center so the additional horizontal field fits a 16:9 viewport. RTTs
+     retain the game's projection, including reflections and post effects. */
+  if (OPTION_widescreen && !r->target) {
+    r->uniform_video_scale[0] *= 0.75f;
+    r->uniform_video_scale[1] = -0.75f;
+  }
+
   /* a target is drawn upside down, so its first row is the top of the image
      as it is in texture memory */
   if (r->target) {
@@ -1535,6 +1543,12 @@ void r_begin_target(struct render_backend *r, texture_handle_t handle,
 }
 
 void r_end_target(struct render_backend *r) {
+  /* Tile GPUs (including Adreno) need only store the sampled color. Discard
+     depth/stencil before switching FBOs, while they can still be on chip. */
+  if (OPTION_gpu_optimizations && glInvalidateFramebuffer) {
+    const GLenum attachments[] = {GL_DEPTH_ATTACHMENT, GL_STENCIL_ATTACHMENT};
+    glInvalidateFramebuffer(GL_FRAMEBUFFER, 2, attachments);
+  }
   r->target = 0;
 
   glBindFramebuffer(GL_FRAMEBUFFER, r->target_prev_fbo);

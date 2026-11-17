@@ -1,0 +1,4 @@
+# Deterministic save-state replay of the CT2 attract driving scene.
+120
+load /data/user/0/io.github.cloudwithax.nodosumi/files/benchmark/replay.state
+1200

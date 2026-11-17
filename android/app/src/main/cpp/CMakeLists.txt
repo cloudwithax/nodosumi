@@ -8,7 +8,7 @@ set(A64_JIT ON CACHE BOOL "" FORCE)
 add_subdirectory(${NODOSUMI_ROOT} nodosumi)
 
 add_library(nodosumi_android SHARED frontend.c)
-target_include_directories(nodosumi_android PRIVATE ${NODOSUMI_ROOT}/deps/libretro/include)
+target_include_directories(nodosumi_android PRIVATE ${NODOSUMI_ROOT}/deps/libretro/include ${NODOSUMI_ROOT}/src)
 # the core is a finished shared library, take nothing from it but the link.
 # its include paths carry glad's old khrplatform.h, which breaks the ndk's
 # egl and gles headers
