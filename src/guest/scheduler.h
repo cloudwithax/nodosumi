@@ -9,10 +9,15 @@ struct timer;
 struct scheduler;
 struct state;
 
-#define HZ_TO_NANO(hz) (int64_t)(NS_PER_SEC / (float)(hz))
-#define NANO_TO_CYCLES(ns, hz) (int64_t)(((ns) / (float)NS_PER_SEC) * (hz))
+/* double, not float: the tmu hands the guest a 32-bit down counter, and float
+   only has 24 bits of mantissa, so cycles past ~2^24 had their low 8 bits
+   pinned to 0. the bios measures elapsed time with (0xff - tcnt) differences
+   masked to 7 bits, so every delta read as 0 and timed waits never expired. */
+#define HZ_TO_NANO(hz) (int64_t)((double)NS_PER_SEC / (double)(hz))
+#define NANO_TO_CYCLES(ns, hz) \
+  (int64_t)(((double)(ns) * (double)(hz)) / (double)NS_PER_SEC)
 #define CYCLES_TO_NANO(cycles, hz) \
-  (int64_t)(((cycles) / (float)(hz)) * NS_PER_SEC)
+  (int64_t)(((double)(cycles) * (double)NS_PER_SEC) / (double)(hz))
 
 typedef void (*timer_cb)(void *);
 
