@@ -503,8 +503,8 @@ void pvr_destroy(struct pvr *pvr) {
 }
 
 static void pvr_restore_line_timer(struct pvr *pvr, struct state *s) {
-  int active;
-  int64_t remaining;
+  int active = 0;
+  int64_t remaining = 0;
   state_read(s, &active, sizeof(active));
   state_read(s, &remaining, sizeof(remaining));
 
