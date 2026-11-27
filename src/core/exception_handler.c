@@ -57,6 +57,14 @@ void exception_handler_remove(struct exception_handler *handler) {
   }
 }
 
+void exception_handler_reinstall() {
+#if PLATFORM_LINUX
+  if (!list_empty(&live_handlers)) {
+    exception_handler_reinstall_platform();
+  }
+#endif
+}
+
 int exception_handler_handle(struct exception_state *ex) {
   list_for_each_entry(handler, &live_handlers, struct exception_handler, it) {
     if (handler->cb(handler->data, ex)) {

@@ -48,10 +48,17 @@ struct exception_state {
 
 int exception_handler_install_platform();
 void exception_handler_uninstall_platform();
+void exception_handler_reinstall_platform();
 
 struct exception_handler *exception_handler_add(void *data,
                                                 exception_handler_cb cb);
 void exception_handler_remove(struct exception_handler *handler);
 int exception_handler_handle(struct exception_state *ex);
+
+/* re-arm the signal handlers. a frontend may install its own SIGSEGV handler
+   after the core loaded (retroarch's terminal keyboard handler does this when
+   stdin is a tty), clobbering the fastmem handler. call this after the
+   frontend has finished initializing. */
+void exception_handler_reinstall();
 
 #endif
