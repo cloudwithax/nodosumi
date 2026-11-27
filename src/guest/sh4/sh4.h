@@ -8,6 +8,7 @@
 #include "guest/sh4/sh4_intc.h"
 #include "guest/sh4/sh4_mem.h"
 #include "guest/sh4/sh4_mmu.h"
+#include "guest/sh4/sh4_rtc.h"
 #include "guest/sh4/sh4_scif.h"
 #include "guest/sh4/sh4_tmu.h"
 #include "guest/sh4/sh4_types.h"
@@ -74,6 +75,9 @@ struct sh4 {
 
   /* tmu */
   struct timer *tmu_timers[3];
+
+  /* rtc periodic interrupt */
+  struct timer *rtc_timer;
 };
 
 extern struct reg_cb sh4_cb[SH4_NUM_REGS];

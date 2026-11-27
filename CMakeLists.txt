@@ -245,6 +245,7 @@ set(RELIB_SOURCES
   src/guest/sh4/sh4_intc.c
   src/guest/sh4/sh4_mem.c
   src/guest/sh4/sh4_mmu.c
+  src/guest/sh4/sh4_rtc.c
   src/guest/sh4/sh4_tmu.c
   src/guest/sh4/sh4_scif.c
   src/guest/debugger.c

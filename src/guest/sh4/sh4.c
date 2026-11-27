@@ -371,6 +371,11 @@ void sh4_set_exception_handler(struct sh4 *sh4,
 void sh4_reset(struct sh4 *sh4, uint32_t pc) {
   jit_free_code(sh4->jit);
 
+  if (sh4->rtc_timer) {
+    sched_cancel_timer(sh4->dc->sched, sh4->rtc_timer);
+    sh4->rtc_timer = NULL;
+  }
+
   /* reset context */
   memset(&sh4->ctx, 0, sizeof(sh4->ctx));
   sh4->ctx.pc = pc;
@@ -496,6 +501,8 @@ static void sh4_load_state(struct device *dev, struct state *s) {
     state_read(s, &remaining, sizeof(remaining));
     sh4_tmu_restore_timer(sh4, i, active, remaining);
   }
+
+  sh4_rtc_restore_timer(sh4);
 }
 
 struct sh4 *sh4_create(struct dreamcast *dc) {
