@@ -134,6 +134,18 @@ int exception_handler_install_platform() {
   return 1;
 }
 
+void exception_handler_reinstall_platform() {
+  struct sigaction new_sa;
+  new_sa.sa_flags = SA_SIGINFO;
+  sigemptyset(&new_sa.sa_mask);
+  new_sa.sa_sigaction = &signal_handler;
+
+  /* keep the handlers captured at the first install, so an unhandled fault
+     still ends up in whatever the frontend or the default action wants */
+  sigaction(SIGSEGV, &new_sa, NULL);
+  sigaction(SIGILL, &new_sa, NULL);
+}
+
 void exception_handler_uninstall_platform() {
   sigaction(SIGSEGV, &old_sigsegv, NULL);
   sigaction(SIGILL, &old_sigill, NULL);

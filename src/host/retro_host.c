@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "core/core.h"
+#include "core/exception_handler.h"
 #include "core/filesystem.h"
 #include "core/ftrace.h"
 #include "core/string.h"
@@ -956,6 +957,18 @@ void retro_run() {
   if (g_stats < 0) {
     g_stats = getenv("NODOSUMI_STATS") != NULL;
   }
+
+#if PLATFORM_LINUX
+  /* retroarch installs a SIGSEGV handler to restore the terminal when stdin
+     is a tty, after the core has already installed its fastmem handler. that
+     hides every mmio access behind a crash. put the core's handler back now
+     that the frontend has finished initializing. */
+  static int exc_reinstalled;
+  if (!exc_reinstalled) {
+    exception_handler_reinstall();
+    exc_reinstalled = 1;
+  }
+#endif
 
   static int ft_named;
   if (!ft_named) {
