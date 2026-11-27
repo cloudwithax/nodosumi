@@ -151,7 +151,22 @@ static int sh4_interpret(struct sh4 *sh4, uint32_t addr) {
   return cycles;
 }
 
+/* P2 is the sh4's uncached mirror of main ram. hardware doesn't cache
+   instructions fetched through it, so don't cache translations of p2 ram
+   either. the dreamcast bios runs its bootstrap through the uncached mirror
+   and rewrites the code it is about to jump to (the boot file descramble), so
+   a cached translation would keep executing the old contents and then jump
+   into whatever was there before the descramble. */
+static int sh4_addr_uncached(uint32_t addr) {
+  return (addr & 0xe0000000) == 0xa0000000 &&
+         (addr & 0x1fffffff) >= 0x0c000000;
+}
+
 static int sh4_compile_code(struct sh4 *sh4, uint32_t addr) {
+  if (sh4_addr_uncached(addr)) {
+    return sh4_interpret(sh4, addr);
+  }
+
   if (g_interp_runs < 0) {
     const char *env = getenv("NODOSUMI_INTERP_RUNS");
     g_interp_runs = env ? atoi(env) : 8;
